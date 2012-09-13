@@ -14,27 +14,49 @@
 #include "padic.h"
 #include "padic_poly.h"
 #include "qadic.h"
+#include "qadic_dense.h"
 
 #ifndef FLINT_CPIMPORT
 #define FLINT_CPIMPORT "/home/user/FLINT/flint-2/qadic/CPimport.txt"
 #endif
 
-#ifndef DEBUG
 #define DEBUG 0
-#endif
 
-long poly24ntl[] = {24, 4, 3, 1, 0};
-long poly240ntl[] = {240, 8, 5, 3, 0};
-long poly331ntl[] = {331, 10, 6, 2, 0};
-long poly1001ntl[] = {1001, 17, 0};
-long poly1101ntl[] = {1101, 9, 7, 4, 0};
+#define NTL_LENGTH
+long polyntl[NTL_LENGTH][5] = {
+    {24, 4, 3, 1, 0},
+    {240, 8, 5, 3, 0},
+    {331, 10, 6, 2, 0},
+    {1001, 17, 0, 0, 0},
+    {1101, 9, 7, 4, 0},
+};
 
-long poly240mgm[] = {240, 8, 5, 3, 0};
-long poly555mgm[] = {555, 9, 8, 7, 6, 5, 4, 3, 0};
-long poly1001mgm[] = {1001, 5, 3, 1, 0};
-long poly1101mgm[] = {1101, 9, 7, 4, 0};
-long poly1301mgm[] = {1301, 11, 10, 1, 0};
-long poly1501mgm[] = {1501, 6, 5, 2, 0};
+#define MGM_LENGTH 23
+long polymgm[MGM_LENGTH][9] = {
+    {240, 8, 5, 3, 0, 0, 0, 0, 0},
+    {444, 9, 7, 5, 4, 3, 2, 1, 0},
+    {500, 8, 6, 5, 2, 1, 0, 0, 0},
+    {555, 9, 8, 7, 6, 5, 4, 3, 0},
+    {600, 7, 6, 5, 4, 2, 0, 0, 0},
+    {665, 10, 9, 7, 6, 5, 3, 1, 0},
+    {666, 8, 6, 5, 3, 2, 0, 0, 0},
+    {700, 6, 5, 2, 0, 0, 0, 0, 0},
+    {777, 10, 9, 8, 5, 4, 0, 0, 0},
+    {800, 9, 7, 1, 0, 0, 0, 0, 0},
+    {888, 9, 8, 7, 6, 3, 2, 1, 0},
+    {900, 1, 0, 0, 0, 0, 0, 0, 0},
+    {999, 9, 8, 5, 4, 1, 0, 0, 0},
+    {1001, 5, 3, 1, 0, 0, 0, 0, 0},
+    {1050, 12, 8, 7, 4, 3, 0, 0, 0},
+    {1101, 9, 7, 4, 0, 0, 0, 0, 0},
+    {1150, 10, 8, 3, 2, 1, 0, 0, 0},
+    {1200, 10, 6, 5, 3, 2, 0, 0, 0},
+    {1250, 11, 9, 8, 6, 2, 0, 0, 0},
+    {1301, 11, 10, 1, 0, 0, 0, 0, 0},
+    {1400, 8, 3, 1, 0, 0, 0, 0, 0},
+    {1501, 6, 5, 2, 0, 0, 0, 0, 0},
+    {1665, 9, 8, 7, 6, 2, 0, 0, 0},
+};
 
 void fmpz_poly_init_ui(fmpz_poly_t rop, long* op)
 {
@@ -53,6 +75,35 @@ void fmpz_poly_init_ui(fmpz_poly_t rop, long* op)
     }
 }
 
+int fmpz_poly_init_conway_mgm(fmpz_poly_t poly,
+                              const fmpz_t p, long d)
+{
+    long i = 0;
+
+    if (fmpz_cmp_ui(p, 2) != 0)
+    {
+        printf("Exception (fmpz_poly_init_mgm).  Conway polynomials \n");
+        printf("are only available for p equal to 2.\n");
+        return 1;
+    }
+
+    while (polymgm[i][0] != d && i < MGM_LENGTH)
+    {
+        i++;
+    }
+
+    if (i == MGM_LENGTH)
+    {
+        printf("Exception (fmpz_poly_init_mgm).  Conway polynomial \n");
+        printf("not available for this extension degree.\n");
+        return 1;
+    }
+
+    fmpz_poly_init_ui(poly, polymgm[i]);
+
+    return 0;
+}
+
 void qadic_ctx_modulus(padic_poly_t rop, const qadic_ctx_t ctx)
 {
     long i;
@@ -65,6 +116,52 @@ void qadic_ctx_modulus(padic_poly_t rop, const qadic_ctx_t ctx)
 
     _padic_poly_set_length(rop, ctx->len);
     padic_poly_canonicalise(rop, (&ctx->pctx)->p);
+}
+
+void qadic_ctx_init(qadic_ctx_t ctx, const padic_poly_t modulus,
+                    const padic_ctx_t pctx, const char *var)
+{
+    long d;
+    long i, j;
+
+    /* Find number of non-zero coefficients */
+    d = padic_poly_degree(modulus);
+    ctx->len = 1;
+
+    for (i = 0; i < d; i++)
+    {
+        /* if (!padic_is_zero(padic_poly_get_coeff_padic(coeff, modulus, i, pctx),
+                              pctx)) */
+        if (!fmpz_is_zero(modulus->coeffs + i))
+            ctx->len ++;
+    }
+
+    ctx->a = _fmpz_vec_init(ctx->len);
+    ctx->j = flint_malloc(ctx->len * sizeof(long));
+
+    /* Copy the polynomial */
+    j = 0;
+
+    for (i = 0; i < d; i++)
+    {
+        if (!fmpz_is_zero(modulus->coeffs + i))
+        {
+            fmpz_set(ctx->a + j, modulus->coeffs + i);
+            ctx->j[j] = i;
+            j++;
+        }
+    }
+
+    fmpz_set(ctx->a + j, modulus-> coeffs + d);
+    ctx->j[j] = d;
+
+    /* Complete the initialisation of the context */
+    padic_ctx_init(&ctx->pctx, pctx->p, pctx->N, pctx->mode);
+
+    ctx->var = flint_malloc(strlen(var));
+    strcpy(ctx->var, var);
+
+    return;
 }
 
 void qadic_ctx_init_reduce(qadic_ctx_t rop, const qadic_ctx_t op, long N)
@@ -94,8 +191,8 @@ void qadic_ctx_init_reduce(qadic_ctx_t rop, const qadic_ctx_t op, long N)
     fmpz_clear(pow);
 }
 
-void fmpz_poly_init_conway(fmpz_poly_t poly,
-                           const fmpz_t p, long d)
+int fmpz_poly_init_conway(fmpz_poly_t poly,
+                          const fmpz_t p, long d)
 {
     char *buf;
     FILE *file;
@@ -104,7 +201,7 @@ void fmpz_poly_init_conway(fmpz_poly_t poly,
     {
         printf("Exception (fmpz_poly_init_conway).  Conway polynomials \n");
         printf("are only available for primes up to 109987.\n");
-        abort();
+        return 1;
     }
 
     buf  = flint_malloc(832);
@@ -113,7 +210,7 @@ void fmpz_poly_init_conway(fmpz_poly_t poly,
     if (!file)
     {
         printf("Exception (fmpz_poly_init_conway).  File loading.\n");
-        abort();
+        return 2;
     }
 
     while (fgets(buf, 832, file))
@@ -147,7 +244,7 @@ void fmpz_poly_init_conway(fmpz_poly_t poly,
 
             fclose(file);
             flint_free(buf);
-            return;
+            return 0;
         }
     }
 
@@ -156,18 +253,22 @@ void fmpz_poly_init_conway(fmpz_poly_t poly,
 
     printf("Exception (fmpz_poly_init_conway).  The polynomial for \n");
     printf("(p,d) = (%ld,%ld) is not present in the database.\n", *p, d);
-    abort();
+    return 1;
 }
 
-void padic_poly_init_conway(padic_poly_t poly,
-                            const fmpz_t p, long d,
-                            const padic_ctx_t ctx)
+int padic_poly_init_conway(padic_poly_t poly,
+                           const fmpz_t p, long d,
+                           const padic_ctx_t ctx)
 {
     fmpz_poly_t cpoly;
-    fmpz_poly_init_conway(cpoly, p, d);
+    if (fmpz_poly_init_conway(cpoly, p, d))
+    {
+        return 1;
+    }
     padic_poly_init2(poly, d + 1);
     padic_poly_set_fmpz_poly(poly, cpoly, ctx);
     fmpz_poly_clear(cpoly);
+    return 0;
 }
 
 /* Powers of p should be shared */
@@ -332,7 +433,7 @@ void _padic_poly_teichmuller_inc(fmpz_poly_t delta, const fmpz_poly_t f0,
     }
 }
 
-/* Partial lifts should be stored rather than recomputed by reduction later */
+/* Partial lifts could be stored rather than recomputed by reduction later */
 void _padic_poly_teichmuller(fmpz_poly_t g, const fmpz_poly_t f,
                              const fmpz_t p, long N)
 {
@@ -484,7 +585,7 @@ void _qadic_proot_basis_init(qadic_struct *roots, const qadic_ctx_t ctx)
     fmpz_init(pow);
     fmpz_pow_ui(pow, &p, d - 1);
 
-    padic_poly_init2(t, d - 1);
+    padic_poly_init2(t, d);
     _padic_poly_set_length(t, 2);
     fmpz_set_ui(t->coeffs, 0);
     fmpz_set_ui(t->coeffs + 1, 1);
@@ -692,59 +793,100 @@ void qadic_artin_schreier_root_ii(qadic_t x, const qadic_t alpha,
     }
     else
     {
-        long N2 = (N + 1) / 2;
-        long M = N - N2;
-
-        qadic_t alpha2, beta2, gamma2, Delta2;
+        long *a, i, n, M;
+        qadic_t alpha2, beta2, gamma2, gamma3, Delta2;
         qadic_ctx_t ctx2;
+        qadic_ctx_struct *qctx;
+
+        /* Number of steps */
+        n = FLINT_CLOG2(N) + 1;
+
+        /* Precision at each step */
+        a = flint_malloc(n * sizeof(long));
+
+        for (a[i = 0] = N; a[i] > 1; i++)
+            a[i + 1] = (a[i] + 1) / 2;
+
+        /* Contexts */
+        qctx = flint_malloc(n * sizeof(qadic_ctx_struct));
+
+        for (i = 0; i < n; i++)
+            qadic_ctx_init_reduce(qctx + i, ctx, a[i]);
 
         qadic_init(alpha2);
         qadic_init(beta2);
         qadic_init(gamma2);
+        qadic_init(gamma3);
         qadic_init(Delta2);
 
-        qadic_ctx_init_reduce(ctx2, ctx, N2);
+        /* Lifting */
+        i = n - 1;
+        {
+            qctx = qctx + i;
 
-        qadic_set(alpha2, alpha);
-        qadic_set(beta2, beta);
-        qadic_set(gamma2, gamma);
+            qadic_set(alpha2, alpha);
+            qadic_set(beta2, beta);
+            qadic_set(gamma2, gamma);
 
-        padic_poly_reduce(alpha2, &ctx2->pctx);
-        padic_poly_reduce(beta2, &ctx2->pctx);
-        padic_poly_reduce(gamma2, &ctx2->pctx);
+            padic_poly_reduce(alpha2, &qctx->pctx);
+            padic_poly_reduce(beta2, &qctx->pctx);
+            padic_poly_reduce(gamma2, &qctx->pctx);
 
-        qadic_artin_schreier_root_ii(x, alpha2, beta2, gamma2, roots, frobs, ctx2);
+            qadic_inv(x, alpha2, qctx);
+            qadic_mul(x, x, gamma2, qctx);
+            qadic_neg(x, x, qctx);
+            qadic_proot(x, x, roots, qctx);
+        }
+        for (i--; i >= 0; i--)
+        {
+            qctx--;
+            M = a[i] - a[i + 1];
 
-        qadic_frobenius_teichmuller(gamma2, x, frobs, ctx);
-        qadic_mul(gamma2, gamma2, alpha, ctx);
-        qadic_mul(Delta2, beta, x, ctx);
-        qadic_add(gamma2, gamma2, Delta2, ctx);
-        qadic_add(gamma2, gamma2, gamma, ctx);
-        gamma2->val -= N2;
+            qadic_set(alpha2, alpha);
+            qadic_set(beta2, beta);
+            qadic_set(gamma2, gamma);
 
-        qadic_ctx_clear(ctx2);
+            padic_poly_reduce(alpha2, &qctx->pctx);
+            padic_poly_reduce(beta2, &qctx->pctx);
+            padic_poly_reduce(gamma2, &qctx->pctx);
 
-        qadic_ctx_init_reduce(ctx2, ctx, M);
+            qadic_frobenius_teichmuller(gamma3, x, frobs, qctx);
+            qadic_mul(gamma3, gamma3, alpha2, qctx);
+            qadic_mul(Delta2, beta2, x, qctx);
+            qadic_add(gamma3, gamma3, Delta2, qctx);
+            qadic_add(gamma3, gamma3, gamma2, qctx);
+            gamma3->val -= a[i + 1];
 
-        padic_poly_reduce(alpha2, &ctx2->pctx);
-        padic_poly_reduce(beta2, &ctx2->pctx);
-        padic_poly_reduce(gamma2, &ctx2->pctx);
+            qadic_ctx_init_reduce(ctx2, qctx, M);
 
-        qadic_artin_schreier_root_ii(Delta2, alpha2, beta2, gamma2, roots, frobs, ctx2);
-        Delta2->val += N2;
+            padic_poly_reduce(alpha2, &ctx2->pctx);
+            padic_poly_reduce(beta2, &ctx2->pctx);
+            padic_poly_reduce(gamma3, &ctx2->pctx);
 
-        qadic_add(x, x, Delta2, ctx);
+            qadic_artin_schreier_root_ii(Delta2, alpha2, beta2, gamma3, roots, frobs, ctx2);
+            Delta2->val += a[i + 1];
 
-        qadic_ctx_clear(ctx2);
+            qadic_add(x, x, Delta2, qctx);
+
+            qadic_ctx_clear(ctx2);
+        }
 
         qadic_clear(alpha2);
         qadic_clear(beta2);
         qadic_clear(gamma2);
+        qadic_clear(gamma3);
         qadic_clear(Delta2);
+
+        for (i = 0; i < n; i++)
+            qadic_ctx_clear(qctx + i);
+
+        flint_free(qctx);
+
+        flint_free(a);
     }
 }
 
-/* Newton lift for moular polynomials */
+/* Newton lift for modular polynomials */
 /* k = 0, M = N' */
 void qadic_gen_newton_lift_ii_modular(qadic_t rop, const qadic_t op,
                                       const qadic_struct *roots,
@@ -759,7 +901,7 @@ void qadic_gen_newton_lift_ii_modular(qadic_t rop, const qadic_t op,
     }
     else if (*(&ctx->pctx)->p == 2L)
     {
-        long *a, i, n, t, j, k;
+        long *a, i, n;
         qadic_t Delta_x, Delta_y, Delta, V, y, xy;
         qadic_ctx_struct *qctx;
 
@@ -879,11 +1021,12 @@ void qadic_gen_newton_lift_ii_modular(qadic_t rop, const qadic_t op,
         qadic_clear(y);
         qadic_clear(xy);
 
-        flint_free(a);
-
         for (i = 0; i < n; i++)
             qadic_ctx_clear(qctx + i);
+
         flint_free(qctx);
+
+        flint_free(a);
     }
     else
     {
@@ -994,8 +1137,8 @@ void qadic_norm_char_2(padic_t rop, const qadic_t op, const qadic_ctx_t ctx)
 
 int main(int argc, char* argv[])
 {
-    clock_t ltime, ntime;
-    long i, d, N;
+    clock_t time, total_time;
+    long d, N;
     fmpz_t p, pow, s, t2;
     fmpz_poly_t f, g;
     padic_poly_t h;
@@ -1004,6 +1147,8 @@ int main(int argc, char* argv[])
     qadic_struct *frobs, *roots;
     qadic_t a, x, xinv;
     padic_t t;
+
+    total_time = clock();
 
     if (argc < 2)
     {
@@ -1024,31 +1169,53 @@ int main(int argc, char* argv[])
     printf("d = %ld\n", d);
     printf("N = %ld\n", N);
 
-    //fmpz_poly_init_conway(f, p, d);
-    fmpz_poly_init_ui(f, poly1301mgm);
+    if (fmpz_poly_init_conway(f, p, d) && fmpz_poly_init_conway_mgm(f, p, d))
+    {
+        printf("Error.  Conway polynomial not found.\n");
+        abort();
+    }
     printf("f = ");
     fmpz_poly_print_pretty(f, "x");
     printf("\n");
 
     fmpz_poly_init2(g, d + 1);
+    time = clock();
     _padic_poly_teichmuller(g, f, p, N);
+    printf("Modulus took %f seconds.\n", ((double) (clock() - time)) / CLOCKS_PER_SEC);
+#if DEBUG >= 1
     printf("g = ");
     fmpz_poly_print_pretty(g, "x");
     printf("\n");
+#endif
 
     padic_ctx_init(pctx, p, N, PADIC_TERSE);
 
     padic_poly_init(h);
     padic_poly_set_fmpz_poly(h, g, pctx);
+#if DEBUG >= 1
     printf("h = ");
     padic_poly_print_pretty(h, "x", pctx);
     printf("\n");
+#endif
+
 
     qadic_ctx_init(qctx, h, pctx, "t");
     qadic_ctx_init_reduce(qctx_one, qctx, 1);
 
+    time = clock();
     qadic_proot_basis_init(&roots, qctx_one);
+    printf("p-th root took %f seconds.\n", ((double) (clock() - time)) / CLOCKS_PER_SEC);
+    time = clock();
     qadic_frobenius_teichmuller_init(&frobs, qctx);
+    printf("Frobenius took %f seconds.\n", ((double) (clock() - time)) / CLOCKS_PER_SEC);
+#if DEBUG >= 1
+    printf("roots = ");
+    qadic_print_pretty(roots + 1, qctx);
+    printf("\n");
+    printf("frobs = ");
+    qadic_print_pretty(frobs + 1, qctx);
+    printf("\n");
+#endif
 
     padic_poly_init2(a, d - 1);
     _padic_poly_set_length(a, d - 1);
@@ -1057,15 +1224,17 @@ int main(int argc, char* argv[])
     qadic_print_pretty(a, qctx);
     printf("\n");
 
-    ltime = clock();
+    time = clock();
     qadic_init(x);
     qadic_gen_newton_lift_ii_modular(x, a, roots, frobs, qctx);
+#if DEBUG >= 1
     printf("x = ");
     qadic_print_pretty(x, qctx);
     printf("\n");
-    printf("Lift took %f seconds.\n", ((double) (clock() - ltime)) / CLOCKS_PER_SEC);
+#endif
+    printf("Lift took %f seconds.\n", ((double) (clock() - time)) / CLOCKS_PER_SEC);
 
-    ntime = clock();
+    time = clock();
     qadic_init(xinv);
     qadic_set(xinv, x);
     /* groumpf, that means, we can gain 2 bits above... */
@@ -1074,17 +1243,20 @@ int main(int argc, char* argv[])
     qadic_one(x, qctx);
     qadic_add(xinv, xinv, x, qctx);
     qadic_inv(xinv, xinv, qctx);
+#if DEBUG >= 1
     printf("xinv = ");
     qadic_print_pretty(xinv, qctx);
     printf("\n");
+#endif
 
     /* Go back to sparse modulus from here... */
     padic_init(t, pctx);
     qadic_norm_char_2(t, xinv, qctx);
+    /* qadic_norm(t, xinv, qctx); */
     printf("norm = ");
     padic_print(t, pctx);
     printf("\n");
-    printf("Norm took %f seconds.\n", ((double) (clock() - ntime)) / CLOCKS_PER_SEC);
+    printf("Norm took %f seconds.\n", ((double) (clock() - time)) / CLOCKS_PER_SEC);
 
     fmpz_init(t2);
     padic_get_fmpz(t2, t, pctx);
@@ -1108,7 +1280,7 @@ int main(int argc, char* argv[])
     printf("card = ");
     fmpz_print(t2);
     printf("\n");
-    printf("Total time: %f seconds.\n", ((double) (clock() - ltime)) / CLOCKS_PER_SEC);
+    printf("Total time: %f seconds.\n", ((double) (clock() - total_time)) / CLOCKS_PER_SEC);
 
     padic_clear(t, pctx);
 
