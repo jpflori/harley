@@ -679,7 +679,7 @@ void qadic_dense_proot(qadic_dense_t rop, const qadic_dense_t op,
     }
 }
 
-void qadic_dense_frobenius_teichmuller_init(qadic_dense_struct **frobs,
+void qadic_dense_frobenius_teichmuller_precomp_init(qadic_dense_struct **frobs,
                                       const qadic_dense_ctx_t ctx)
 {
     const long d = qadic_dense_ctx_degree(ctx);
@@ -712,7 +712,7 @@ void qadic_dense_frobenius_teichmuller_init(qadic_dense_struct **frobs,
     }
 }
 
-void qadic_dense_frobenius_teichmuller_init_char_2(qadic_dense_struct **frobs,
+void qadic_dense_frobenius_teichmuller_precomp_init_char_2(qadic_dense_struct **frobs,
                                       const qadic_dense_ctx_t ctx)
 {
     /* The leading coefficient of the modulus is one */
@@ -787,7 +787,7 @@ void qadic_dense_frobenius_teichmuller_init_char_2(qadic_dense_struct **frobs,
     padic_clear(a, &ctx->pctx);
 }
 
-void qadic_dense_frobenius_teichmuller_reduce(qadic_dense_struct **frobs,
+void qadic_dense_frobenius_teichmuller_precomp_reduce(qadic_dense_struct **frobs,
                                               const qadic_dense_ctx_t ctx)
 {
     const long N = (&ctx->pctx)->N;
@@ -874,7 +874,7 @@ void qadic_dense_frobenius_teichmuller_reduce(qadic_dense_struct **frobs,
     }
 }
 
-void qadic_dense_frobenius_teichmuller_reduce_char_2(qadic_dense_struct **frobs,
+void qadic_dense_frobenius_teichmuller__precomp_reduce_char_2(qadic_dense_struct **frobs,
                                                      const qadic_dense_ctx_t ctx)
 {
     const long N = (&ctx->pctx)->N;
@@ -1093,7 +1093,6 @@ void _qadic_dense_frobenius_teichmuller_precomp(qadic_dense_t rop, const qadic_d
 }
 
 void _qadic_dense_frobenius_teichmuller_char_2(qadic_dense_t rop, const qadic_dense_t op,
-                                 const qadic_dense_struct *frobs,
                                  const qadic_dense_ctx_t ctx)
 {
     const long len = padic_poly_length(op);
@@ -1115,27 +1114,44 @@ void _qadic_dense_frobenius_teichmuller_char_2(qadic_dense_t rop, const qadic_de
     qadic_dense_reduce(rop, ctx);
 }
 
+void _qadic_dense_frobenius_teichmuller(qadic_dense_t rop, const qadic_dense_t op,
+                                 const qadic_dense_ctx_t ctx)
+{
+    const long len = padic_poly_length(op);
+    const long p = *(&ctx->pctx)->p;
+    long i;
+
+    padic_poly_fit_length(rop, p*len - 1);
+    _fmpz_vec_zero(rop->coeffs, p*len - 1);
+    for (i = 0; i < len; i++)
+    {
+        fmpz_set(rop->coeffs + p*i, op->coeffs + i);
+    }
+    _padic_poly_set_length(rop, p*len - 1);
+    rop->val = op->val;
+
+    qadic_dense_reduce(rop, ctx);
+}
+
 void qadic_dense_frobenius_teichmuller(qadic_dense_t rop, const qadic_dense_t op,
-                                 const qadic_dense_struct *frobs,
                                  const qadic_dense_ctx_t ctx)
 {
     if (rop == op)
     {
         qadic_dense_t t;
         qadic_dense_set(t, op);
-        _qadic_dense_frobenius_teichmuller_char_2(rop, t, frobs, ctx);
+        _qadic_dense_frobenius_teichmuller(rop, t, ctx);
         qadic_dense_clear(t);
     }
     else
     {
-        _qadic_dense_frobenius_teichmuller_char_2(rop, op, frobs, ctx);
+        _qadic_dense_frobenius_teichmuller(rop, op, ctx);
     }
 }
 
 void _qadic_dense_artin_schreier_root_ii(qadic_dense_t x, const qadic_dense_t alpha,
                                    const qadic_dense_t beta, const qadic_dense_t gamma,
                                    const qadic_dense_struct *roots,
-                                   const qadic_dense_struct *frobs,
                                    long m, const long *b, const qadic_dense_ctx_struct *qctx)
 {
     if (m == 1)
@@ -1147,9 +1163,7 @@ void _qadic_dense_artin_schreier_root_ii(qadic_dense_t x, const qadic_dense_t al
     }
     else
     {
-        const long d = qadic_dense_ctx_degree(qctx);
         const qadic_dense_ctx_struct *qctxi, *qctxj;
-        const qadic_dense_struct *frobsi;
         long *a, h, i, j, n;
         qadic_dense_t alpha2, beta2, gamma2, gamma3, Delta2;
 
@@ -1175,7 +1189,6 @@ void _qadic_dense_artin_schreier_root_ii(qadic_dense_t x, const qadic_dense_t al
         j = m - 1;
         {
             qctxi = qctx + j;
-            frobsi = frobs + d * j;
 
             qadic_dense_set(alpha2, alpha);
             qadic_dense_set(beta2, beta);
@@ -1195,12 +1208,10 @@ void _qadic_dense_artin_schreier_root_ii(qadic_dense_t x, const qadic_dense_t al
             h = j;
             j--;
             qctxi--;
-            frobsi -= d;
             if (b[j] != a[i])
             {
                 j--;
                 qctxi--;
-                frobsi -= d;
             }
             if (b[j + 1] == a[i] - a[i + 1])
                 qctxj = qctx + j + 1;
@@ -1215,7 +1226,7 @@ void _qadic_dense_artin_schreier_root_ii(qadic_dense_t x, const qadic_dense_t al
             padic_poly_reduce(beta2, &qctxi->pctx);
             padic_poly_reduce(gamma2, &qctxi->pctx);
 
-            qadic_dense_frobenius_teichmuller(gamma3, x, frobsi, qctxi);
+            qadic_dense_frobenius_teichmuller(gamma3, x, qctxi);
             qadic_dense_mul(gamma3, gamma3, alpha2, qctxi);
             qadic_dense_mul(Delta2, beta2, x, qctxi);
             qadic_dense_add(gamma3, gamma3, Delta2, qctxi);
@@ -1227,9 +1238,9 @@ void _qadic_dense_artin_schreier_root_ii(qadic_dense_t x, const qadic_dense_t al
             padic_poly_reduce(gamma3, &qctxj->pctx);
 
             if (b[h] == a[i] - a[i + 1])
-                _qadic_dense_artin_schreier_root_ii(Delta2, alpha2, beta2, gamma3, roots, frobs + d * h, m - h, b + h, qctx + h);
+                _qadic_dense_artin_schreier_root_ii(Delta2, alpha2, beta2, gamma3, roots, m - h, b + h, qctx + h);
             else
-                _qadic_dense_artin_schreier_root_ii(Delta2, alpha2, beta2, gamma3, roots, frobs + d * (h + 1), m - h - 1, b + h + 1, qctx + h + 1);
+                _qadic_dense_artin_schreier_root_ii(Delta2, alpha2, beta2, gamma3, roots, m - h - 1, b + h + 1, qctx + h + 1);
             Delta2->val += a[i + 1];
 
             qadic_dense_add(x, x, Delta2, qctxi);
@@ -1248,7 +1259,6 @@ void _qadic_dense_artin_schreier_root_ii(qadic_dense_t x, const qadic_dense_t al
 void qadic_dense_artin_schreier_root_ii(qadic_dense_t x, const qadic_dense_t alpha,
                                    const qadic_dense_t beta, const qadic_dense_t gamma,
                                    const qadic_dense_struct *roots,
-                                   const qadic_dense_struct *frobs,
                                    const qadic_dense_ctx_t ctx)
 {
     const long N = (&ctx->pctx)->N;
@@ -1303,7 +1313,7 @@ void qadic_dense_artin_schreier_root_ii(qadic_dense_t x, const qadic_dense_t alp
             qadic_dense_ctx_init_reduce(qctx + i, qctx + i - 1, b[i]);
         }
 
-        _qadic_dense_artin_schreier_root_ii(x, alpha, beta, gamma, roots, frobs, m, b, qctx);
+        _qadic_dense_artin_schreier_root_ii(x, alpha, beta, gamma, roots, m, b, qctx);
 
         for (i = 0; i < m; i++)
             qadic_dense_ctx_clear(qctx + i);
@@ -1318,7 +1328,6 @@ void qadic_dense_artin_schreier_root_ii(qadic_dense_t x, const qadic_dense_t alp
 /* k = 0, M = N' */
 void _qadic_dense_gen_newton_lift_ii_modular(qadic_dense_t rop, const qadic_dense_t op,
                                       const qadic_dense_struct *roots,
-                                      const qadic_dense_struct *frobs,
                                       long m, const long *b, const qadic_dense_ctx_struct *qctx)
 {
     if (m == 1)
@@ -1327,8 +1336,6 @@ void _qadic_dense_gen_newton_lift_ii_modular(qadic_dense_t rop, const qadic_dens
     }
     else if (*(&(qctx + m - 1)->pctx)->p == 2L)
     {
-        const long d = qadic_dense_ctx_degree(qctx);
-        const qadic_dense_struct *frobsi;
         const qadic_dense_ctx_struct *qctxi, *qctxk;
         long two;
         long *a, i, j, k, n;
@@ -1360,7 +1367,6 @@ void _qadic_dense_gen_newton_lift_ii_modular(qadic_dense_t rop, const qadic_dens
         j = m - 1;
         {
             qctxi = qctx + j;
-            frobsi = frobs + d * j;
 
             qadic_dense_set(rop, op);
         }
@@ -1370,16 +1376,14 @@ void _qadic_dense_gen_newton_lift_ii_modular(qadic_dense_t rop, const qadic_dens
             qctxk = qctxi;
             j--;
             qctxi--;
-            frobsi -= d;
             if (b[j] != a[i])
             {
                 j--;
                 qctxi--;
-                frobsi -= d;
             }
 
             /* y */
-            qadic_dense_frobenius_teichmuller(y, rop, frobsi, qctxi);
+            qadic_dense_frobenius_teichmuller(y, rop, qctxi);
             /* 2 y */
             qadic_dense_set(Delta_x, y);
             Delta_x->val += 1;
@@ -1447,7 +1451,7 @@ void _qadic_dense_gen_newton_lift_ii_modular(qadic_dense_t rop, const qadic_dens
             qadic_dense_mul(Delta_y, Delta_y, xy, qctxk);
 
             /* Delta */
-            _qadic_dense_artin_schreier_root_ii(Delta, Delta_y, Delta_x, V, roots, frobs + d * k, m - k, b + k, qctx + k);
+            _qadic_dense_artin_schreier_root_ii(Delta, Delta_y, Delta_x, V, roots, m - k, b + k, qctx + k);
             Delta->val += a[i + 1];
 
             /* rop */
@@ -1472,7 +1476,6 @@ void _qadic_dense_gen_newton_lift_ii_modular(qadic_dense_t rop, const qadic_dens
 /* k = 0, M = N' */
 void qadic_dense_gen_newton_lift_ii_modular(qadic_dense_t rop, const qadic_dense_t op,
                                       const qadic_dense_struct *roots,
-                                      const qadic_dense_struct *frobs,
                                       const qadic_dense_ctx_t ctx)
 {
     const long N = (&ctx->pctx)->N;
@@ -1524,7 +1527,7 @@ void qadic_dense_gen_newton_lift_ii_modular(qadic_dense_t rop, const qadic_dense
             qadic_dense_ctx_init_reduce(qctx + i, qctx + i - 1, b[i]);
         }
 
-        _qadic_dense_gen_newton_lift_ii_modular(rop, op, roots, frobs, m, b, qctx);
+        _qadic_dense_gen_newton_lift_ii_modular(rop, op, roots, m, b, qctx);
 
         for (i = 0; i < n; i++)
             qadic_dense_ctx_clear(qctx + i);
@@ -1732,7 +1735,7 @@ int main(int argc, char *argv[])
     padic_poly_t h;
     padic_ctx_t pctx;
     qadic_dense_ctx_t qctx, qctx_one;
-    qadic_dense_struct *frobs, *roots;
+    qadic_dense_struct *roots;
     qadic_dense_t a, x, xinv;
 
     total_time = clock();
@@ -1801,8 +1804,9 @@ int main(int argc, char *argv[])
     qadic_dense_print_pretty(roots + 1, qctx);
     printf("\n");
 #endif
+    /*
     time = clock();
-    qadic_dense_frobenius_teichmuller_init_char_2(&frobs, qctx);
+    qadic_dense_frobenius_teichmuller_precomp_init_char_2(&frobs, qctx);
     printf("Frobenius took %f seconds.\n", ((double) (clock() - time)) / CLOCKS_PER_SEC);
 #if DEBUG >= 1
     printf("frobs[1] = ");
@@ -1810,9 +1814,10 @@ int main(int argc, char *argv[])
     printf("\n");
 #endif
     time = clock();
-    qadic_dense_frobenius_teichmuller_reduce_char_2(&frobs, qctx);
+    qadic_dense_frobenius_teichmuller_precomp_reduce_char_2(&frobs, qctx);
     printf("Frobenius reduction took %f seconds.\n", ((double) (clock() - time)) / CLOCKS_PER_SEC);
     time = clock();
+    */
     qadic_dense_traces_init(&traces, qctx);
     printf("Traces took %f seconds.\n", ((double) (clock() - time)) / CLOCKS_PER_SEC);
 
@@ -1827,7 +1832,7 @@ int main(int argc, char *argv[])
 
     time = clock();
     qadic_dense_init(x);
-    qadic_dense_gen_newton_lift_ii_modular(x, a, roots, frobs, qctx);
+    qadic_dense_gen_newton_lift_ii_modular(x, a, roots, qctx);
 #if DEBUG >= 1
     printf("x = ");
     qadic_dense_print_pretty(x, qctx);
