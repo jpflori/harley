@@ -1674,13 +1674,14 @@ void qadic_dense_norm_char_2(padic_t rop, const qadic_dense_t op, const padic_st
     /* w = 2^(-s) log(a) */
     time = clock();
     padic_one(r, pctx3);
-    qadic_dense_zero(w);
+    padic_poly_fit_length(w, 2*(gamma->length)*(N + s));
+    padic_poly_zero(w);
     for (i = v; i < N + s - 1 - 2*v; i += 2*v)
     {
         padic_inv(rinv, r, pctx3);
         padic_poly_scalar_mul_padic(t, gamma, rinv, pctx3);
         padic_poly_reduce(t, pctx3);
-        qadic_dense_add(w, w, t, ctx3);
+        padic_poly_add(w, w, t, pctx3);
         qadic_dense_mul(gamma, gamma, gamma2, ctx3);
         padic_add(r, r, ptwo, pctx3);
     }
@@ -1688,7 +1689,7 @@ void qadic_dense_norm_char_2(padic_t rop, const qadic_dense_t op, const padic_st
         padic_inv(rinv, r, pctx3);
         padic_poly_scalar_mul_padic(t, gamma, rinv, pctx3);
         padic_poly_reduce(t, pctx3);
-        qadic_dense_add(w, w, t, ctx3);
+        padic_poly_add(w, w, t, pctx3);
     }
     w->val -= s - 1;
     printf("log took %f seconds.\n", ((double) (clock() - time)) / CLOCKS_PER_SEC);
