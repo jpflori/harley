@@ -6,6 +6,8 @@
 #include <time.h>
 #define ulong unsigned long
 
+#include "gf2x.h"
+
 #include "flint.h"
 #include "fmpz.h"
 #include "fmpz_vec.h"
@@ -157,9 +159,9 @@ void qadic_dense_ctx_init_reduce(qadic_dense_ctx_t rop, const qadic_dense_ctx_t 
     _fmpz_vec_scalar_mod_fmpz(rop->mod->coeffs, op->mod->coeffs, d + 1, pow);
     _padic_poly_set_length(rop->mod, d + 1);
 
-    padic_poly_init2(rop->invmod, d + 1);
-    _fmpz_vec_scalar_mod_fmpz(rop->invmod->coeffs, op->invmod->coeffs, d + 1, pow);
-    _padic_poly_set_length(rop->invmod, d + 1);
+    padic_poly_init2(rop->invmod, d - 1);
+    _fmpz_vec_scalar_mod_fmpz(rop->invmod->coeffs, op->invmod->coeffs, d - 1, pow);
+    _padic_poly_set_length(rop->invmod, d - 1);
     _padic_poly_normalise(rop->invmod);
 
     rop->var = flint_malloc(strlen(op->var) + 1);
@@ -183,9 +185,9 @@ void qadic_dense_ctx_init_reduce_char_2(qadic_dense_ctx_t rop, const qadic_dense
     _fmpz_vec_scalar_fdiv_r_2exp(rop->mod->coeffs, op->mod->coeffs, d + 1, N);
     _padic_poly_set_length(rop->mod, d + 1);
 
-    padic_poly_init2(rop->invmod, d + 1);
-    _fmpz_vec_scalar_fdiv_r_2exp(rop->invmod->coeffs, op->invmod->coeffs, d + 1, N);
-    _padic_poly_set_length(rop->invmod, d + 1);
+    padic_poly_init2(rop->invmod, d - 1);
+    _fmpz_vec_scalar_fdiv_r_2exp(rop->invmod->coeffs, op->invmod->coeffs, d - 1, N);
+    _padic_poly_set_length(rop->invmod, d - 1);
     _padic_poly_normalise(rop->invmod);
 
     rop->var = flint_malloc(strlen(op->var) + 1);
@@ -195,21 +197,20 @@ void qadic_dense_ctx_init_reduce_char_2(qadic_dense_ctx_t rop, const qadic_dense
 }
 
 /* Powers of p should be shared */
-void _padic_poly_teichmuller_inc_recursive(fmpz_poly_t delta, const fmpz_poly_t f0,
+void _padic_poly_teichmuller_inc_recursive_char_2(fmpz_poly_t delta, const fmpz_poly_t f0,
                                            const fmpz_poly_t f1, const fmpz_poly_t V,
-                                           long d, long m, const long *b, const fmpz *pow)
+                                           long d, long m, const long *b)
 {
     if (m == 1)
     {
         fmpz_poly_neg(delta, V);
-        _fmpz_vec_scalar_mod_fmpz(delta->coeffs, delta->coeffs, delta->length, pow);
+        _fmpz_vec_scalar_fdiv_r_2exp(delta->coeffs, delta->coeffs, delta->length, b[0]);
         _fmpz_poly_normalise(delta);
     }
-    else if (*(pow + m  - 1) == 2L)
+    else
     {
         long *a, h, i, j, k, l, l0, l1, ld, n;
-        const fmpz *powi;
-        fmpz_poly_t delta0, df0, delta1, df1, W, Delta;
+        fmpz_poly_t f0red, delta0, df0, f1red, delta1, df1, W, Delta;
 
         /* Number of steps */
         n = FLINT_CLOG2(b[0]) + 1;
@@ -220,7 +221,7 @@ void _padic_poly_teichmuller_inc_recursive(fmpz_poly_t delta, const fmpz_poly_t 
         i = 0;
         for (a[i = 0] = b[0]; a[i] > 1; i++)
         {
-            a[i + 1] = (a[i] + 1) / 2;
+            a[i + 1] = (a[i] + 1) >> 1;
         }
 
         /* Degree and length */
@@ -228,8 +229,10 @@ void _padic_poly_teichmuller_inc_recursive(fmpz_poly_t delta, const fmpz_poly_t 
         l0 = (l + 1) >> 1;
         l1 = (l >> 1);
 
+        fmpz_poly_init2(f0red, l);
         fmpz_poly_init2(delta0, l0);
         fmpz_poly_init2(df0, l);
+        fmpz_poly_init2(f1red, l);
         fmpz_poly_init2(delta1, l1);
         fmpz_poly_init2(df1, l);
         fmpz_poly_init2(W, l);
@@ -239,24 +242,19 @@ void _padic_poly_teichmuller_inc_recursive(fmpz_poly_t delta, const fmpz_poly_t 
         i = n - 1;
         j = m - 1;
         {
-            powi = pow + j;
+            ld = V->length;
 
-            fmpz_poly_set(delta, V);
-
-            ld = delta->length;
-
-            _fmpz_vec_scalar_mod_fmpz(delta->coeffs, delta->coeffs, ld, powi);
+            _fmpz_vec_scalar_fdiv_r_2exp(delta->coeffs, V->coeffs, ld, a[i]);
+            _fmpz_poly_set_length(delta, ld);
             _fmpz_poly_normalise(delta);
         }
         for (i--; i >= 0; i--)
         {
             h = j;
             j--;
-            powi--;
             if (b[j] != a[i])
             {
                 j--;
-                powi--;
             }
 
             ld = delta->length;
@@ -271,24 +269,32 @@ void _padic_poly_teichmuller_inc_recursive(fmpz_poly_t delta, const fmpz_poly_t 
             _fmpz_poly_normalise(delta0);
             _fmpz_poly_normalise(delta1);
 
-            _fmpz_vec_scalar_mod_fmpz(df0->coeffs, f0->coeffs, f0->length, powi);
-            _fmpz_vec_scalar_mod_fmpz(df1->coeffs, f1->coeffs, f1->length, powi);
-            _fmpz_poly_set_length(df0, f0->length);
-            _fmpz_poly_set_length(df1, f1->length);
-            _fmpz_poly_normalise(df0);
-            _fmpz_poly_normalise(df1);
+            _fmpz_vec_scalar_fdiv_r_2exp(f0red->coeffs, f0->coeffs, f0->length, a[i]);
+            _fmpz_vec_scalar_fdiv_r_2exp(f1red->coeffs, f1->coeffs, f1->length, a[i]);
+            _fmpz_poly_set_length(f0red, f0->length);
+            _fmpz_poly_set_length(f1red, f1->length);
+            _fmpz_poly_normalise(f0red);
+            _fmpz_poly_normalise(f1red);
 
             if (delta0->length != 0)
             {
-                _fmpz_mod_poly_mul(df0->coeffs, delta0->coeffs, delta0->length, f0->coeffs, f0->length, powi);
-                _fmpz_poly_set_length(df0, delta0->length + f0->length - 1);
+                if (delta0->length >= f0red->length)
+                    _fmpz_poly_mul(df0->coeffs, delta0->coeffs, delta0->length, f0red->coeffs, f0red->length);
+                else
+                    _fmpz_poly_mul(df0->coeffs, f0red->coeffs, f0red->length, delta0->coeffs, delta0->length);
+                _fmpz_poly_set_length(df0, delta0->length + f0red->length - 1);
+                _fmpz_vec_scalar_fdiv_r_2exp(df0->coeffs, df0->coeffs, df0->length, a[i]);
             }
             else
                 df0->length = 0;
             if (delta1->length != 0)
             {
-                _fmpz_mod_poly_mul(df1->coeffs, delta1->coeffs, delta1->length, f1->coeffs, f1->length, powi);
-                _fmpz_poly_set_length(df1, delta1->length + f1->length);
+                if (delta1->length >= f1red->length)
+                    _fmpz_poly_mul(df1->coeffs, delta1->coeffs, delta1->length, f1red->coeffs, f1red->length);
+                else
+                    _fmpz_poly_mul(df1->coeffs, f1red->coeffs, f1red->length, delta1->coeffs, delta1->length);
+                _fmpz_poly_set_length(df1, delta1->length + f1red->length);
+                _fmpz_vec_scalar_fdiv_r_2exp(df1->coeffs, df1->coeffs, df1->length, a[i]);
                 _fmpz_poly_shift_left(df1->coeffs, df1->coeffs, df1->length - 1, 1);
             }
             else
@@ -296,111 +302,50 @@ void _padic_poly_teichmuller_inc_recursive(fmpz_poly_t delta, const fmpz_poly_t 
 
             if (df0->length != 0 || df1->length != 0)
             {
-                _fmpz_mod_poly_sub(df0->coeffs, df0->coeffs, df0->length, df1->coeffs, df1->length, powi);
-
-                _fmpz_poly_set_length(df0, FLINT_MAX(df0->length, df1->length));
-                _fmpz_poly_normalise(df0);
-
-                _fmpz_vec_scalar_mul_2exp(df0->coeffs, df0->coeffs, df0->length, 1);
-                /* Computed everything above with one superfluous bit... */
-                _fmpz_vec_scalar_mod_fmpz(df0->coeffs, df0->coeffs, df0->length, powi);
-                _fmpz_poly_normalise(df0);
+                _fmpz_poly_sub(df1->coeffs, df1->coeffs, df1->length, df0->coeffs, df0->length);
+                _fmpz_poly_set_length(df1, FLINT_MAX(df0->length, df1->length));
+                _fmpz_vec_scalar_fdiv_r_2exp(df1->coeffs, df1->coeffs, df1->length, a[i]-1);
+                _fmpz_poly_normalise(df1);
+                _fmpz_vec_scalar_mul_2exp(df1->coeffs, df1->coeffs, df1->length, 1);
             }
 
             /* W */
-            _fmpz_mod_poly_add(W->coeffs, delta->coeffs, ld, V->coeffs, V->length, powi);
+            _fmpz_poly_add(W->coeffs, delta->coeffs, ld, V->coeffs, V->length);
             _fmpz_poly_set_length(W, FLINT_MAX(ld, V->length));
+            _fmpz_vec_scalar_fdiv_r_2exp(W->coeffs, W->coeffs, W->length, a[i]);
             _fmpz_poly_normalise(W);
 
-            _fmpz_mod_poly_sub(W->coeffs, W->coeffs, W->length, df0->coeffs, df0->length, powi);
-            _fmpz_poly_set_length(W, FLINT_MAX(W->length, df0->length));
+            _fmpz_poly_add(W->coeffs, W->coeffs, W->length, df1->coeffs, df1->length);
+            _fmpz_poly_set_length(W, FLINT_MAX(W->length, df1->length));
+            _fmpz_vec_scalar_fdiv_r_2exp(W->coeffs, W->coeffs, W->length, a[i]);
             _fmpz_poly_normalise(W);
 
             _fmpz_vec_scalar_fdiv_q_2exp(W->coeffs, W->coeffs, W->length, a[i + 1]);
 
             /* Delta */
             if (b[h] == a[i] - a[i + 1])
-                _padic_poly_teichmuller_inc_recursive(Delta, f0, f1, W, d, m - h, b + h, pow + h);
+                _padic_poly_teichmuller_inc_recursive_char_2(Delta, f0, f1, W, d, m - h, b + h);
             else
-                _padic_poly_teichmuller_inc_recursive(Delta, f0, f1, W, d, m - h - 1, b + h + 1, pow + h + 1);
+                _padic_poly_teichmuller_inc_recursive_char_2(Delta, f0, f1, W, d, m - h - 1, b + h + 1);
             _fmpz_vec_scalar_mul_2exp(Delta->coeffs, Delta->coeffs, Delta->length, a[i + 1]);
-            /* Check precision here */
-            _fmpz_vec_scalar_mod_fmpz(Delta->coeffs, Delta->coeffs, Delta->length, powi);
-            _fmpz_poly_normalise(Delta);
+            /*_fmpz_vec_scalar_fdiv_r_2exp(Delta->coeffs, Delta->coeffs, Delta->length, a[i]);
+              _fmpz_poly_normalise(Delta);*/
 
             /* update delta */
-            _fmpz_mod_poly_add(delta->coeffs, delta->coeffs, ld, Delta->coeffs, Delta->length, powi);
+            _fmpz_poly_add(delta->coeffs, delta->coeffs, ld, Delta->coeffs, Delta->length);
             _fmpz_poly_set_length(delta, FLINT_MAX(ld, Delta->length));
+            _fmpz_vec_scalar_fdiv_r_2exp(delta->coeffs, delta->coeffs, delta->length, a[i]);
             _fmpz_poly_normalise(delta);
         }
 
+        fmpz_poly_clear(f0red);
         fmpz_poly_clear(delta0);
         fmpz_poly_clear(df0);
         fmpz_poly_clear(delta1);
         fmpz_poly_clear(df1);
+        fmpz_poly_clear(f1red);
         fmpz_poly_clear(W);
         fmpz_poly_clear(Delta);
-    }
-}
-
-void _padic_poly_teichmuller_inc(fmpz_poly_t delta, const fmpz_poly_t f0,
-                                 const fmpz_poly_t f1, const fmpz_poly_t V,
-                                 long d, const fmpz_t p, long N)
-{
-    if (N == 1)
-    {
-        fmpz_poly_neg(delta, V);
-        _fmpz_vec_scalar_mod_fmpz(delta->coeffs, delta->coeffs, delta->length, p);
-        _fmpz_poly_normalise(delta);
-    }
-    else if (*(p) == 2L)
-    {
-        long *b, i, m, n;
-        fmpz *pow;
-
-        /* Number of steps */
-        n = FLINT_CLOG2(N) + 1;
-
-        /* Compute precisions needed later */
-        b = flint_malloc((2 * n) * sizeof(long));
-
-        i = 0;
-        {
-            b[i] = N;
-        }
-        for (; !(b[i] & 1L); i++)
-        {
-            b[i + 1] = b[i] >> 1;
-        }
-        for (; b[i] > 2; i += 2)
-        {
-            b[i + 1] = (b[i] >> 1) + 1;
-            b[i + 2] = b[i] >> 1;
-        }
-        if (b[i] == 2L)
-        {
-            b[i + 1] = 1L;
-            i++;
-        }
-
-        m = i + 1;
-        pow = _fmpz_vec_init(m);
-
-        /* Compute powers of 2 needed later */
-        {
-            fmpz_set_ui(pow + i, 2L);
-        }
-        for (i--; i >= 0; i--)
-        {
-            fmpz_mul_2exp(pow + i, pow + m - 1, b[i] - 1);
-        }
-
-        /* Let's go! */
-        _padic_poly_teichmuller_inc_recursive(delta, f0, f1, V, d, m, b, pow);
-
-        /* Deallocation */
-        _fmpz_vec_clear(pow, m);
-        flint_free(b);
     }
 }
 
@@ -419,8 +364,6 @@ void _padic_poly_teichmuller(fmpz_poly_t g, const fmpz_poly_t f,
     else if (*(p) == 2L)
     {
         long *a, *b, d, h, i, j, k, l, l0, l1, n, m;
-        /* One should be sufficient */
-        fmpz *pow, *powi;
         fmpz_poly_t f0, f0_sqr, f1, f1_sqr, V, delta;
 
         /* Degree and length */
@@ -445,7 +388,7 @@ void _padic_poly_teichmuller(fmpz_poly_t g, const fmpz_poly_t f,
         i = 0;
         for (a[i = 0] = N; a[i] > 1; i++)
         {
-            a[i + 1] = (a[i] + 1) / 2;
+            a[i + 1] = (a[i] + 1) >> 1;
         }
 
         /* Compute precisions needed later */
@@ -469,36 +412,21 @@ void _padic_poly_teichmuller(fmpz_poly_t g, const fmpz_poly_t f,
             b[i + 1] = 1L;
             i++;
         }
-
         m = i + 1;
-        pow = _fmpz_vec_init(m);
-
-        /* Compute powers of 2 needed later */
-        {
-            fmpz_set_ui(pow + i, 2L);
-        }
-        for (i--; i >= 0; i--)
-        {
-            fmpz_mul_2exp(pow + i, pow + m - 1, b[i] - 1);
-        }
 
         /* Lifting */
-        i = n - 1;
         j = m - 1;
+        i = n - 1;
         {
-            powi = pow + j;
-
             fmpz_poly_set(g, f);
         }
         for (i--; i >= 0; i--)
         {
             h = j;
             j--;
-            powi--;
             if (b[j] != a[i])
             {
                 j--;
-                powi--;
             }
 
             /* f_0, f_1, and squares */
@@ -511,11 +439,14 @@ void _padic_poly_teichmuller(fmpz_poly_t g, const fmpz_poly_t f,
             _fmpz_poly_normalise(f0);
             _fmpz_poly_normalise(f1);
 
-            _fmpz_mod_poly_sqr(f0_sqr->coeffs, f0->coeffs, f0->length, powi);
-            _fmpz_mod_poly_sqr(f1_sqr->coeffs, f1->coeffs, f1->length, powi);
+            _fmpz_poly_sqr(f0_sqr->coeffs, f0->coeffs, f0->length);
+            _fmpz_poly_sqr(f1_sqr->coeffs, f1->coeffs, f1->length);
 
             _fmpz_poly_set_length(f0_sqr, (f0->length << 1) - 1);
             _fmpz_poly_set_length(f1_sqr, (f1->length << 1));
+
+            _fmpz_vec_scalar_fdiv_r_2exp(f0_sqr->coeffs, f0_sqr->coeffs, f0_sqr->length, a[i]);
+            _fmpz_vec_scalar_fdiv_r_2exp(f1_sqr->coeffs, f1_sqr->coeffs, f1_sqr->length - 1, a[i]);
 
             _fmpz_poly_shift_left(f1_sqr->coeffs, f1_sqr->coeffs, f1_sqr->length - 1, 1);
 
@@ -524,32 +455,39 @@ void _padic_poly_teichmuller(fmpz_poly_t g, const fmpz_poly_t f,
 
             _fmpz_vec_set(V->coeffs, g->coeffs, l);
 
-            _fmpz_mod_poly_sub(V->coeffs, V->coeffs, V->length, f0_sqr->coeffs, f0_sqr->length, powi);
-            _fmpz_poly_normalise(V);
+            _fmpz_poly_sub(V->coeffs, V->coeffs, V->length, f0_sqr->coeffs, f0_sqr->length);
+            /*_fmpz_vec_scalar_fdiv_r_2exp(V->coeffs, V->coeffs, V->length, a[i]);
+              _fmpz_poly_normalise(V);*/
 
-            _fmpz_mod_poly_add(V->coeffs, V->coeffs, V->length, f1_sqr->coeffs, f1_sqr->length, powi);
+            _fmpz_poly_add(V->coeffs, V->coeffs, V->length, f1_sqr->coeffs, f1_sqr->length);
             _fmpz_poly_set_length(V, FLINT_MAX(V->length, f1_sqr->length));
-            _fmpz_poly_normalise(V);
+            /*_fmpz_vec_scalar_fdiv_r_2exp(V->coeffs, V->coeffs, V->length, a[i]);
+              _fmpz_poly_normalise(V);*/
 
             _fmpz_vec_scalar_fdiv_q_2exp(V->coeffs, V->coeffs, V->length, a[i + 1]);
+            _fmpz_poly_normalise(V);
 
             /* delta */
             if (b[h] == a[i] - a[i + 1])
-                _padic_poly_teichmuller_inc_recursive(delta, f0, f1, V, d, m - h, b + h, pow + h);
+                _padic_poly_teichmuller_inc_recursive_char_2(delta, f0, f1, V, d, m - h, b + h);
             else
-                _padic_poly_teichmuller_inc_recursive(delta, f0, f1, V, d, m - h - 1, b + h + 1, pow + h + 1);
+                _padic_poly_teichmuller_inc_recursive_char_2(delta, f0, f1, V, d, m - h - 1, b + h + 1);
 
             /* Use vec method */
             _fmpz_vec_scalar_mul_2exp(delta->coeffs, delta->coeffs, delta->length, a[i + 1]);
-            _fmpz_vec_scalar_mod_fmpz(delta->coeffs, delta->coeffs, delta->length, powi);
+            /*_fmpz_vec_scalar_fdiv_r_2exp(delta->coeffs, delta->coeffs, delta->length, a[i]);*/
             _fmpz_poly_normalise(delta);
 
             /* update g */
-            _fmpz_mod_poly_add(g->coeffs, g->coeffs, l, delta->coeffs, delta->length, powi);
+            _fmpz_poly_add(g->coeffs, g->coeffs, l, delta->coeffs, delta->length);
+            _fmpz_vec_scalar_fdiv_r_2exp(g->coeffs, g->coeffs, l, a[i]);
         }
 
         if (!fmpz_is_one(fmpz_poly_lead(g)))
-            _fmpz_mod_poly_neg(g->coeffs, g->coeffs, g->length, powi);
+        {
+            _fmpz_vec_neg(g->coeffs, g->coeffs, l);
+            _fmpz_vec_scalar_fdiv_r_2exp(g->coeffs, g->coeffs, l, N);
+        }
 
         fmpz_poly_clear(f0);
         fmpz_poly_clear(f0_sqr);
@@ -558,11 +496,735 @@ void _padic_poly_teichmuller(fmpz_poly_t g, const fmpz_poly_t f,
         fmpz_poly_clear(V);
         fmpz_poly_clear(delta);
 
-        _fmpz_vec_clear(pow, m);
-
         flint_free(a);
         flint_free(b);
     }
+}
+
+#define L2W(l) (((l) / (sizeof(unsigned long) * CHAR_BIT)) + (((l) % (sizeof(unsigned long) * CHAR_BIT)) ? 1 : 0))
+
+static void
+gf2x_clear(unsigned long *A)
+{
+    flint_free(A);
+}
+
+static void
+gf2x_copy(unsigned long *R,
+          const unsigned long *A, unsigned int wA, long lA)
+{
+    unsigned int i;
+
+    for (i = 0; i < wA; i++)
+        R[i] = A[i];
+}
+
+static void
+gf2x_normalise(const unsigned long *A, unsigned int *wA, long *lA)
+{
+    unsigned long bit;
+
+    while (((*wA) > 0) && !A[(*wA) - 1])
+    {
+        (*wA)--;
+        *lA = (*wA) * (sizeof(unsigned long) * CHAR_BIT);
+    }
+
+    if ((*wA) == 0)
+        *lA = 0;
+    else
+    {
+        if ((*lA) % (sizeof(unsigned long) * CHAR_BIT) == 0)
+            bit = 1UL << ((sizeof(unsigned long) * CHAR_BIT) - 1);
+        else
+            bit = 1UL << (((*lA) % (sizeof(unsigned long) * CHAR_BIT)) - 1);
+
+        while (!(A[(*wA) - 1] & bit))
+        {
+            (*lA)--;
+            bit >>= 1;
+        }
+    }
+}
+
+/* No aliasing */
+static void
+gf2x_reverse(unsigned long *A, const unsigned long *B, unsigned int wB, long lB)
+{
+    long i;
+    unsigned int w, wA;
+    unsigned long bit, bitrev;
+
+    i = lB;
+    w = wB - 1;
+    bitrev = 1UL;
+    wA = 0;
+    A[wA] = 0;
+
+    if (i % (sizeof(unsigned long) * CHAR_BIT))
+    {
+        bit = 1UL << ((i % (sizeof(unsigned long) * CHAR_BIT)) - 1);
+
+        while (bit != 0)
+        {
+            if (B[w] & bit)
+                A[wA] |= bitrev;
+
+            bit >>= 1;
+            bitrev <<= 1;
+            i--;
+        }
+        w--;
+    }
+
+    while (i != 0)
+    {
+        bit = 1UL << ((sizeof(unsigned long) * CHAR_BIT) - 1);
+
+        while (bit != 0)
+        {
+            if (bitrev == 0)
+            {
+                bitrev = 1UL;
+                wA++;
+                A[wA] = 0;
+            }
+
+            if (B[w] & bit)
+                A[wA] |= bitrev;
+
+            bit >>= 1;
+            bitrev <<= 1;
+            i--;
+        }
+        w--;
+    }
+}
+
+/* Aliasing possible */
+static void
+gf2x_add(unsigned long *R, const unsigned long *A, unsigned int wA,
+         const unsigned long *B, unsigned int wB)
+{
+    if (wA < wB)
+    {
+        gf2x_add(R, B, wB, A, wA);
+    }
+    else
+    {
+        long i;
+
+        for (i = 0; i < wB; i++)
+            R[i] = A[i] ^ B[i];
+
+        if (R != A)
+        {
+            for (; i < wA; i++)
+                R[i] = A[i];
+        }
+    }
+}
+
+/* Aliasing possible */
+static void
+gf2x_sqr(unsigned long *A, const unsigned long *B, unsigned int wB, long lB)
+{
+    long i;
+    unsigned int w, wA;
+    unsigned long bit, bitsqr, C;
+
+    i = lB;
+    w = wB - 1;
+    wA = L2W(2*lB - 1) - 1;
+    if (i % (sizeof(unsigned long) * CHAR_BIT))
+    {
+        bit = 1UL << ((i % (sizeof(unsigned long) * CHAR_BIT)) - 1);
+        bitsqr = 1UL << (((2*i - 1) % (sizeof(unsigned long) * CHAR_BIT)) - 1);
+
+        C = B[w];
+        A[wA] = 0;
+
+        while (bit != 0)
+        {
+            if (bitsqr == 0)
+            {
+                bitsqr = 1UL << ((sizeof(unsigned long) * CHAR_BIT) - 2);
+                wA--;
+                A[wA] = 0;
+            }
+
+            if (C & bit)
+                A[wA] |= bitsqr;
+
+            bit >>= 1;
+            i--;
+
+            bitsqr >>= 2;
+        }
+        w--;
+        wA--;
+    }
+    while (i != 0)
+    {
+        bit = 1UL << ((sizeof(unsigned long) * CHAR_BIT) - 1);
+        bitsqr = 1UL << ((sizeof(unsigned long) * CHAR_BIT) - 2);
+
+        C = B[w];
+        A[wA] = 0;
+
+        while (bit != 0)
+        {
+            if (bitsqr == 0)
+            {
+                bitsqr = 1UL << ((sizeof(unsigned long) * CHAR_BIT) - 2);
+                wA--;
+                A[wA] = 0;
+            }
+
+            if (C & bit)
+                A[wA] |= bitsqr;
+
+            bit >>= 1;
+            i--;
+
+            bitsqr >>= 2;
+        }
+        w--;
+        wA--;
+    }
+}
+
+/* No aliasing */
+static __inline__ void
+gf2x_inv_series_newton(unsigned long *R, const unsigned long *A, unsigned int wA, long lA,
+                       long d)
+{
+    long i = FLINT_CLOG2(d);
+    long t = FLINT_CLOG2(sizeof(unsigned long) * CHAR_BIT);
+    long j;
+    unsigned int wR;
+    long lR;
+
+    R[0] = 1;
+    for (j = 1; j < L2W(d); j++)
+    {
+        R[j] = 0;
+    }
+    wR = 1;
+    lR = 1;
+
+    while (t-- && i--)
+    {
+        gf2x_sqr(R, R, wR, lR);
+        gf2x_mul(R, R, wR, A, 1);
+        lR <<= 1;
+    }
+
+    if (i > 0)
+    {
+        long *a;
+        unsigned long *W;
+
+        a = flint_malloc((i + 1) * sizeof(long));
+        for (a[j = 0] = d; a[j] > (sizeof(unsigned long) * CHAR_BIT); j++)
+            a[j + 1] = (a[j] + 1) / 2;
+
+        W = flint_malloc((wA + L2W(a[1])) * sizeof(unsigned long));
+
+        while (i--)
+        {
+            gf2x_mul(W, R, wR, A, wA);
+            gf2x_mul(R + wR, R, wR, W + wR, FLINT_MIN(wR, wA));
+            lR = a[i];
+            wR = L2W(lR);
+        }
+
+        flint_free(a);
+
+        flint_free(W);
+    }
+
+    {
+        unsigned long mask = (1UL << (d % (sizeof(unsigned long) * CHAR_BIT))) - 1;
+        R[wR - 1] &= mask;
+    }
+}
+
+
+/* No aliasing */
+/* wQ >= L2W(lQ) and wR >= wB + wQ >= wA */
+static __inline__ void
+gf2x_divrem_newton(unsigned long *Q, unsigned long *R,
+                   const unsigned long *A, unsigned int wA, long lA,
+                   const unsigned long *B, unsigned int wB, long lB)
+{
+    if (lA >= lB)
+    {
+        const long lQ = lA - lB + 1;
+        const unsigned int wQ = L2W(lQ);
+        unsigned long *Arev, *Brev, *Binv, *Qrev;
+
+        Qrev = flint_malloc((2 * wQ) * sizeof(unsigned long));
+
+        Brev = flint_malloc(wB * sizeof(unsigned long));
+        gf2x_reverse(Brev, B, wB, lB);
+
+        Binv = flint_malloc((wB + L2W(lQ) + 1) * sizeof(unsigned long));
+        gf2x_inv_series_newton(Binv, Brev, wB, lB, lQ);
+
+        Arev = flint_malloc(wA * sizeof(unsigned long));
+        gf2x_reverse(Arev, A, wA, lA);
+
+        gf2x_mul(Qrev, Arev, wQ, Binv, wQ);
+
+        gf2x_reverse(Q, Qrev, wQ, lQ);
+
+        gf2x_mul(R, B, wB, Q, wQ);
+        gf2x_add(R, A, wA, R, wA);
+
+        flint_free(Arev);
+        flint_free(Brev);
+        flint_free(Binv);
+        flint_free(Qrev);
+    }
+    else
+    {
+        gf2x_copy(R, A, wA, lA);
+    }
+}
+
+/* No aliasing */
+static void
+gf2x_xgcd_euclidean(unsigned long *G, unsigned long *U, unsigned long *V,
+                    const unsigned long *A, unsigned int wA, long lA,
+                    const unsigned long *B, unsigned int wB, long lB)
+{
+    if (lA < lB)
+        gf2x_xgcd_euclidean(G, U, V, B, wB, lB, A, wA, lA);
+    else
+    {
+        long i;
+        unsigned long *Q, *R, *C, *D, *T;
+        unsigned long *M11, *M12, *M21, *M22, *M31, *M32;
+        unsigned int wC, wD, wQ, wR, wM11, wM12, wM21, wM22, wM31, wM32;
+        long lC, lD, lQ, lR, lM11, lM12, lM21, lM22, lM31, lM32;
+
+        Q = flint_malloc(wA * sizeof(unsigned long));
+        R = flint_malloc((wA + 1) * sizeof(unsigned long));
+        C = flint_malloc((wA + 1) * sizeof(unsigned long));
+        D = flint_malloc((wA + 1) * sizeof(unsigned long));
+        M11 = flint_malloc((wA + 1) * sizeof(unsigned long));
+        M12 = flint_malloc((wA + 1) * sizeof(unsigned long));
+        M21 = flint_malloc((wA + 1) * sizeof(unsigned long));
+        M22 = flint_malloc((wA + 1) * sizeof(unsigned long));
+        M31 = flint_malloc((wA + 1) * sizeof(unsigned long));
+        M32 = flint_malloc((wA + 1) * sizeof(unsigned long));
+
+        gf2x_copy(C, A, wA, lA);
+        wC = wA;
+        lC = lA;
+        gf2x_copy(D, B, wB, lB);
+        wD = wB;
+        lD = lB;
+
+        M11[0] = 1;
+        wM11 = 1;
+        lM11 = 1;
+        M22[0] = 1;
+        wM22 = 1;
+        lM22 = 1;
+
+        wM12 = 0;
+        lM12 = 0;
+        wM21 = 0;
+        lM21 = 0;
+
+        while (lD)
+        {
+            gf2x_divrem_newton(Q, R, C, wC, lC, D, wD, lD);
+            lQ = lC - lD + 1;
+            wQ = L2W(lQ);
+            lR = lD - 1;
+            wR = L2W(lR);
+            gf2x_normalise(R, &wR, &lR);
+
+            gf2x_mul(M31, Q, wQ, M21, wM21);
+            lM31 = lQ + lM21 - 1;
+            wM31 = L2W(lM31);
+            gf2x_mul(M32, Q, wQ, M22, wM22);
+            lM32 = lQ + lM22 - 1;
+            wM32 = L2W(lM32);
+
+            gf2x_add(M31, M31, wM31, M11, wM11);
+            T = M11;
+            M11 = M21;
+            M21 = M31;
+            M31 = T;
+            lM31 = FLINT_MAX(lM31, lM11);
+            wM31 = FLINT_MAX(wM31, wM11);
+            lM11 = lM21;
+            wM11 = wM21;
+            lM21 = lM31;
+            wM21 = wM31;
+
+            gf2x_add(M32, M32, wM32, M12, wM12);
+            T = M12;
+            M12 = M22;
+            M22 = M32;
+            M32 = T;
+            lM32 = FLINT_MAX(lM32, lM12);
+            wM32 = FLINT_MAX(wM32, wM12);
+            lM12 = lM22;
+            wM12 = wM22;
+            lM22 = lM32;
+            wM22 = wM32;
+            /*printf("M11[0] %lX, M12[0] %lX, M21[0] %lX, M22[0] %lX\n", M11[0], M12[0], M21[0], M22[0]);
+              printf("w11 %u, w12 %u, w21 %u, w22 %u\n", wM11, wM12, wM21, wM22);*/
+            T = C;
+            C = D;
+            D = R;
+            R = T;
+            lC = lD;
+            wC = wD;
+            lD = lR;
+            wD = wR;
+        }
+
+        for (i = 0; i < wB; i++)
+            G[i] = 0;
+
+        for (i = 0; i < wA; i++)
+        {
+            U[i] = 0;
+            V[i] = 0;
+        }
+
+        gf2x_copy(G, C, wC, lC);
+        gf2x_copy(U, M11, wM11, lM11);
+        gf2x_copy(V, M12, wM12, lM12);
+
+        flint_free(C);
+        flint_free(D);
+        flint_free(Q);
+        flint_free(R);
+        flint_free(M11);
+        flint_free(M12);
+        flint_free(M21);
+        flint_free(M22);
+        flint_free(M31);
+        flint_free(M32);
+
+        /*printf("G[0] %lX U[0] %lX V[0] %lX\n", G[0], U[0], V[0]);*/
+    }
+}
+
+/* No aliasing */
+static void
+gf2x_xgcd(unsigned long *G, unsigned long *U, unsigned long *V,
+          const unsigned long *A, unsigned int wA, long lA,
+          const unsigned long *B, unsigned int wB, long lB)
+{
+    if (lA < lB)
+        gf2x_xgcd(G, U, V, B, wB, lB, A, wA, lA);
+    else
+        gf2x_xgcd_euclidean(G, U, V, A, wA, lA, B, wB, lB);
+
+}
+
+
+/* No aliasing */
+/* Suppose lA < lB */
+static void
+gf2x_invmod(unsigned long *R, const unsigned long *A, unsigned int wA, long lA,
+            const unsigned long *B, unsigned int wB, long lB)
+{
+    unsigned long *S, *T;
+    S = flint_malloc(wB * sizeof(unsigned long));
+    T = flint_malloc(wB * sizeof(unsigned long));
+
+    gf2x_xgcd(S, T, R, B, wB, lB, A, wA, lA);
+
+    flint_free(S);
+    flint_free(T);
+}
+
+/* No aliasing */
+static __inline__ void
+gf2x_reduce(unsigned long *R, const unsigned long *A, unsigned int wA, long lA,
+            const unsigned long *B, unsigned int wB, long lB,
+            const unsigned long *Binv, unsigned int wBinv, long lBinv)
+{
+    if (lA >= lB)
+    {
+        const long lQ = lA - lB + 1;
+        const unsigned int wQ = L2W(lQ);
+        unsigned long *Arev, *Q, *Qrev;
+
+        Q = flint_malloc(wQ * sizeof(unsigned long));
+        Qrev = flint_malloc((2 * wQ) * sizeof(unsigned long));
+
+        Arev = flint_malloc(wA * sizeof(unsigned long));
+        gf2x_reverse(Arev, A, wA, lA);
+
+        gf2x_mul(Qrev, Arev, FLINT_MIN(wA, wQ), Binv, FLINT_MIN(wBinv, wQ));
+        gf2x_reverse(Q, Qrev, wQ, lQ);
+
+        gf2x_mul(R, B, wB, Q, wQ);
+        gf2x_add(R, A, wA, R, wB);
+
+        flint_free(Arev);
+        flint_free(Q);
+        flint_free(Qrev);
+    }
+    else
+    {
+        gf2x_copy(R, A, wA, lA);
+    }
+}
+
+/* Aliasing possible */
+static void
+_qadic_dense_sqrt_gf2x(unsigned long *A, unsigned int *wA, long *lA,
+                        const unsigned long *B, unsigned int wB, long lB,
+                        const unsigned long *sqrt, unsigned int wsqrt, long lsqrt,
+                        const unsigned long *mod, unsigned int wmod, long lmod,
+                        const unsigned long *invmod, unsigned int winvmod, long linvmod)
+{
+    long k;
+    unsigned long *s;
+    unsigned int ws, w;
+    long ls;
+    unsigned long bit, bitsqrt, t;
+
+    s =  (unsigned long *) flint_malloc((2 * wmod) * sizeof(unsigned long));
+
+    {
+        bit = 1UL;
+        bitsqrt = 1UL;
+
+        w = 0;
+        t = B[w];
+
+        *wA = 0;
+        A[*wA] = 0;
+
+        ws = 0;
+        s[ws] = 0;
+
+        for (k = 0; k < lB; k++)
+        {
+            if (bit == 0)
+            {
+                bit = 1UL;
+                w++;
+                t = B[w];
+            }
+
+            if (bitsqrt == 0)
+            {
+                bitsqrt = 1UL;
+                (*wA)++;
+                A[*wA] = 0;
+                ws++;
+                s[ws] = 0;
+            }
+
+            if (k & 1)
+            {
+                if (t & bit)
+                    s[ws] |= bitsqrt;
+                bitsqrt <<= 1;
+            }
+            else
+            {
+                if (t & bit)
+                    A[*wA] |= bitsqrt;
+            }
+
+            bit <<=1;
+        }
+
+        *lA = (lB + 1) >> 1;
+        (*wA)++;
+        gf2x_normalise(A, wA, lA);
+
+        ls = lB >> 1;
+        ws++;
+        gf2x_normalise(s, &ws, &ls);
+    }
+    {
+        gf2x_mul(s, s, ws, sqrt, wsqrt);
+        ls = ls + lsqrt - 1;
+        ws = L2W(ls);
+
+        gf2x_add(s, s, ws, A, *wA);
+
+        gf2x_reduce(A, s, ws, ls, mod, wmod, lmod, invmod, winvmod, linvmod);
+        *lA = FLINT_MIN(lmod - 1, ls);
+        *wA = L2W(*lA);
+        gf2x_normalise(A, wA, lA);
+    }
+
+    flint_free(s);
+}
+
+/* Aliasing possible */
+static
+void _qadic_dense_sqr_gf2x(unsigned long *A, unsigned int *wA, long *lA,
+                           const unsigned long *B, unsigned int wB, long lB,
+                           const unsigned long *mod, unsigned int wmod, long lmod,
+                           const unsigned long *invmod, unsigned int winvmod, long linvmod)
+{
+    unsigned long *R = flint_malloc((2 * wB) * (sizeof(unsigned long)));
+    gf2x_sqr(R, B, wB, lB);
+    *lA = 2 * lB - 1;
+    *wA = L2W(*lA);
+
+    gf2x_reduce(A, R, *wA, *lA, mod, wmod, lmod, invmod, winvmod, linvmod);
+    *lA = FLINT_MIN(lmod - 1, *lA);
+    *wA = L2W(*lA);
+    gf2x_normalise(A, wA, lA);
+
+    flint_free(R);
+}
+
+void padic_poly_get_gf2x(unsigned long **rop, unsigned int *w, long *l,
+                         const padic_poly_t op)
+{
+    if (op->val > 0)
+    {
+        *l = 0;
+        *w = 0;
+    }
+    else
+    {
+        long i, j;
+        unsigned long bit;
+
+        *l = padic_poly_degree(op) + 1;
+        *w = L2W(*l);
+        *rop = (unsigned long *) flint_realloc(*rop, *w * sizeof(unsigned long));
+
+        j = -1;
+        bit = 1UL;
+        for (i = 0; i < *l; i++)
+        {
+            if (i % (sizeof(unsigned long) * CHAR_BIT) == 0)
+            {
+                j++;
+                bit = 1UL;
+                (*rop)[j] = 0;
+            }
+            if (fmpz_tstbit(op->coeffs + i, 0))
+                (*rop)[j] |= bit;
+            bit <<= 1;
+        }
+    }
+}
+
+void padic_poly_set_gf2x(padic_poly_t rop, unsigned long *op, unsigned int w, long l)
+{
+    unsigned int i;
+    long k;
+    unsigned long bit;
+
+    padic_poly_fit_length(rop, l);
+    _padic_poly_set_length(rop, l);
+    rop->val = 0;
+
+    i = 0;
+    k = 0;
+    while (k < l)
+    {
+        bit = 1UL;
+        while (bit != 0 && k < l)
+        {
+            if (op[i] & bit)
+                fmpz_one(rop->coeffs + k);
+            else
+                fmpz_zero(rop->coeffs + k);
+            bit <<= 1;
+            k++;
+        }
+        i++;
+    }
+
+    _padic_poly_normalise(rop);
+}
+
+/* This really takes place in a finite field of even characteristic */
+void _qadic_dense_proot_basis_init_gf2x(qadic_dense_struct *roots, const qadic_dense_ctx_t ctx)
+{
+    unsigned long *mod = NULL, *invmod = NULL, *r;
+    unsigned int wmod, winvmod, w;
+    long lmod, linvmod, l;
+
+    padic_poly_get_gf2x(&mod, &wmod, &lmod, ctx->mod);
+    padic_poly_get_gf2x(&invmod, &winvmod, &linvmod, ctx->invmod);
+
+    {
+        qadic_dense_one(roots + 0, ctx);
+    }
+    {
+        long j = lmod - 1;
+
+        r = (unsigned long *) flint_malloc((2 * wmod) * sizeof(unsigned long));
+        r[0] = 2UL;
+        w = 1U;
+        l = 2L;
+
+        while (--j)
+        {
+            _qadic_dense_sqr_gf2x(r, &w, &l, r, w, l,
+                                  mod, wmod, lmod, invmod, winvmod, linvmod);
+        }
+
+        padic_poly_set_gf2x(roots + 1, r, w, l);
+
+        gf2x_clear(mod);
+        gf2x_clear(invmod);
+        gf2x_clear(r);
+    }
+}
+
+/* This really takes place in a finite field of even characteristic */
+void _qadic_dense_proot_basis_init_char_2(qadic_dense_struct *roots, const qadic_dense_ctx_t ctx)
+{
+    const fmpz *p = (&ctx->pctx)->p;
+    const long d = qadic_dense_ctx_degree(ctx);
+    long j;
+    qadic_dense_t t, r;
+    fmpz_t pow;
+
+    fmpz_init(pow);
+    fmpz_pow_ui(pow, p, d - 1);
+
+    padic_poly_init2(t, d);
+    _padic_poly_set_length(t, 2);
+    fmpz_set_ui(t->coeffs, 0);
+    fmpz_set_ui(t->coeffs + 1, 1);
+    qadic_dense_pow(t, t, pow, ctx);
+    /*j = d;
+    while (--j)
+    {
+        qadic_dense_sqr(t, t, ctx);
+        }*/
+
+    qadic_dense_init(r);
+    qadic_dense_one(r, ctx);
+
+    j = 0;
+    {
+        qadic_dense_set(roots, r);
+    }
+    for (j++; j < *p; j++)
+    {
+        qadic_dense_mul(r, r, t, ctx);
+        qadic_dense_set(roots + j, r);
+    }
+
+    qadic_dense_clear(t);
+    qadic_dense_clear(r);
 }
 
 /* This really takes place in a finite field of small characteristic */
@@ -615,6 +1277,15 @@ void qadic_dense_proot_basis_init(qadic_dense_struct **roots, const qadic_dense_
         printf("Error (qadic_dense_init_proot_basis).  characteristic does not fit in a long\n");
         abort();
     }
+    else if (p == 2L)
+    {
+        long i;
+        *roots = flint_malloc(p * sizeof(qadic_dense_struct));
+        for (i = 0; i < p; i++)
+            qadic_dense_init(*roots + i);
+        _qadic_dense_proot_basis_init_gf2x(*roots, ctx);
+        /*_qadic_dense_proot_basis_init_char_2(*roots, ctx);*/
+    }
     else
     {
         long i;
@@ -625,22 +1296,107 @@ void qadic_dense_proot_basis_init(qadic_dense_struct **roots, const qadic_dense_
     }
 }
 
+void _qadic_dense_proot_gf2x(qadic_dense_t rop, const qadic_dense_t op, const qadic_dense_struct *roots,
+                  const qadic_dense_ctx_t ctx)
+{
+    long k;
+    unsigned long *mod = NULL, *invmod = NULL, *sqrt = NULL, *r, *s;
+    unsigned int wmod, winvmod, wsqrt, wr, ws;
+    long lmod, linvmod, lsqrt, lr, ls;
+    unsigned long bit;
+
+    padic_poly_get_gf2x(&mod, &wmod, &lmod, ctx->mod);
+    padic_poly_get_gf2x(&invmod, &winvmod, &linvmod, ctx->invmod);
+    padic_poly_get_gf2x(&sqrt, &wsqrt, &lsqrt, roots + 1);
+
+    r =  (unsigned long *) flint_malloc((2 * wmod) * sizeof(unsigned long));
+    s =  (unsigned long *) flint_malloc((2 * wmod) * sizeof(unsigned long));
+
+    {
+        bit = 1UL;
+        wr = 0;
+        r[wr] = 0;
+        for (k = 0; k < op->length; k += 2)
+        {
+            if (bit == 0)
+            {
+                bit = 1UL;
+                wr++;
+                r[wr] = 0;
+            }
+
+            if (fmpz_tstbit(op->coeffs + k, 0))
+                r[wr] |= bit;
+
+            bit <<= 1;
+        }
+        lr = (op->length + 1) >> 1;
+        wr++;
+        gf2x_normalise(r, &wr, &lr);
+    }
+    {
+        bit = 1UL;
+        ws = 0;
+        s[ws] = 0;
+        for (k = 1; k < op->length; k += 2)
+        {
+            if (bit == 0)
+            {
+                bit = 1UL;
+                ws++;
+                s[ws] = 0;
+            }
+
+            if (fmpz_tstbit(op->coeffs + k, 0))
+                s[ws] |= bit;
+
+            bit <<= 1;
+        }
+        ls = op->length >> 1;
+        ws++;
+        gf2x_normalise(s, &ws, &ls);
+
+        gf2x_mul(s, s, ws, sqrt, wsqrt);
+        ls = ls + lsqrt - 1;
+        ws = L2W(ls);
+
+        gf2x_add(s, s, ws, r, wr);
+
+        gf2x_reduce(r, s, ws, ls, mod, wmod, lmod, invmod, winvmod, linvmod);
+        lr = FLINT_MIN(lmod - 1, ls);
+        wr = L2W(lr);
+        gf2x_normalise(r, &wr, &lr);
+    }
+
+    padic_poly_set_gf2x(rop, r, wr, lr);
+
+    flint_free(r);
+    flint_free(s);
+}
+
 void _qadic_dense_proot(qadic_dense_t rop, const qadic_dense_t op, const qadic_dense_struct *roots,
                   const qadic_dense_ctx_t ctx)
 {
+    const long d = qadic_dense_ctx_degree(ctx);
     const long p = *(&ctx->pctx)->p;
     long j, k;
     qadic_dense_t t;
 
     qadic_dense_init(t);
+    padic_poly_fit_length(t, d);
 
-    qadic_dense_zero(rop);
-
-    for (j = 0; j < p; j++)
+    j = 0;
     {
+        qadic_dense_zero(rop);
         for (k = 0; p*k + j < op->length; k++)
-            ;
-        padic_poly_fit_length(t, k);
+            fmpz_set(rop->coeffs + k, op->coeffs + p*k + j);
+        _padic_poly_set_length(rop, k);
+        rop->val = op->val;
+        padic_poly_canonicalise(rop, &p);
+        _padic_poly_normalise(rop);
+    }
+    for (j = 1; j < p; j++)
+    {
         for (k = 0; p*k + j < op->length; k++)
             fmpz_set(t->coeffs + k, op->coeffs + p*k + j);
         _padic_poly_set_length(t, k);
@@ -678,6 +1434,23 @@ void qadic_dense_proot(qadic_dense_t rop, const qadic_dense_t op,
         qadic_dense_zero(rop);
         return;
     }
+#if 1
+    else if (p == 2L)
+    {
+        if (rop == op)
+        {
+            qadic_dense_t t;
+            qadic_dense_init(t);
+            qadic_dense_set(t, op);
+            _qadic_dense_proot_gf2x(rop, t, roots, ctx);
+            qadic_dense_clear(t);
+        }
+        else
+        {
+            _qadic_dense_proot_gf2x(rop, op, roots, ctx);
+        }
+    }
+#endif
     else
     {
         if (rop == op)
@@ -693,6 +1466,58 @@ void qadic_dense_proot(qadic_dense_t rop, const qadic_dense_t op,
             _qadic_dense_proot(rop, op, roots, ctx);
         }
     }
+}
+
+void _padic_poly_add_char_2(fmpz *rop, long *val,
+                          const fmpz *op1, long val1, long len1,
+                          const fmpz *op2, long val2, long len2,
+                          const padic_ctx_t ctx)
+{
+    const long len = FLINT_MAX(len1, len2);
+
+    *val = FLINT_MIN(val1, val2);
+
+    if (val1 == val2)
+    {
+        _fmpz_poly_add(rop, op1, len1, op2, len2);
+    }
+    else  /* => (op1 != op2) */
+    {
+        long exp;
+
+        if (val1 < val2)  /* F := p^g (G + p^{h-g} H) */
+        {
+            exp = val2 - val1;
+
+            if (rop == op1)
+            {
+                _fmpz_vec_zero(rop + len1, len2 - len1);
+                _fmpz_vec_scalar_addmul_si_2exp(rop, op2, len2, 1L, exp);
+            }
+            else
+            {
+                _fmpz_vec_scalar_mul_2exp(rop, op2, len2, exp);
+                _fmpz_poly_add(rop, op1, len1, rop, len2);
+            }
+        }
+        else  /* F := p^h (p^{g-h} G + H) */
+        {
+            exp = val1 - val2;
+
+            if (rop == op2)
+            {
+                _fmpz_vec_zero(rop + len2, len1 - len2);
+                _fmpz_vec_scalar_addmul_si_2exp(rop, op1, len1, 1L, exp);
+            }
+            else
+            {
+                _fmpz_vec_scalar_mul_2exp(rop, op1, len1, exp);
+                _fmpz_poly_add(rop, rop, len1, op2, len2);
+            }
+        }
+    }
+
+    _padic_poly_canonicalise(rop, val, len, ctx->p);
 }
 
 void _padic_poly_add_no_mod(fmpz *rop, long *val, 
@@ -756,87 +1581,27 @@ void _padic_poly_add_no_mod(fmpz *rop, long *val,
     _padic_poly_canonicalise(rop, val, len, ctx->p);
 }
 
-void _padic_poly_add_2exp(fmpz *rop, long *val,
-                          const fmpz *op1, long val1, long len1,
-                          const fmpz *op2, long val2, long len2,
-                          const padic_ctx_t ctx)
+void padic_poly_add_no_mod(padic_poly_t f, 
+                    const padic_poly_t g, const padic_poly_t h, 
+                    const padic_ctx_t ctx)
 {
-    const long len = FLINT_MAX(len1, len2);
+    const long lenG = g->length;
+    const long lenH = h->length;
+    const long lenF = FLINT_MAX(lenG, lenH);
 
-    *val = FLINT_MIN(val1, val2);
-
-    if (val1 == val2)
+    if (lenG == 0 && lenH == 0)
     {
-        _fmpz_poly_add(rop, op1, len1, op2, len2);
-    }
-    else  /* => (op1 != op2) */
-    {
-        long exp;
-
-        if (val1 < val2)  /* F := p^g (G + p^{h-g} H) */
-        {
-            exp = val2 - val1;
-
-            if (rop == op1)
-            {
-                _fmpz_vec_zero(rop + len1, len2 - len1);
-                _fmpz_vec_scalar_addmul_si_2exp(rop, op2, len2, 1L, exp);
-            }
-            else
-            {
-                _fmpz_vec_scalar_mul_2exp(rop, op2, len2, exp);
-                _fmpz_poly_add(rop, op1, len1, rop, len2);
-            }
-        }
-        else  /* F := p^h (p^{g-h} G + H) */
-        {
-            exp = val1 - val2;
-
-            if (rop == op2)
-            {
-                _fmpz_vec_zero(rop + len2, len1 - len2);
-                _fmpz_vec_scalar_addmul_si_2exp(rop, op1, len1, 1L, exp);
-            }
-            else
-            {
-                _fmpz_vec_scalar_mul_2exp(rop, op1, len1, exp);
-                _fmpz_poly_add(rop, rop, len1, op2, len2);
-            }
-        }
+        padic_poly_zero(f);
+        return;
     }
 
-    _padic_poly_canonicalise(rop, val, len, ctx->p);
-}
+    padic_poly_fit_length(f, lenF);
 
-void _qadic_dense_frobenius_teichmuller_precomp(qadic_dense_t rop, const qadic_dense_t op,
-                                 const qadic_dense_struct *frobs,
-                                 const qadic_dense_ctx_t ctx)
-{
-    const long d = qadic_dense_ctx_degree(ctx);
+    _padic_poly_add_no_mod(f->coeffs, &(f->val), g->coeffs, g->val, lenG, 
+                                          h->coeffs, h->val, lenH, ctx);
 
-    long i;
-    qadic_dense_t t;
-    padic_t c;
-
-    padic_init(c, &ctx->pctx);
-    qadic_dense_init(t);
-
-    padic_poly_fit_length(rop, d);
-    qadic_dense_zero(rop);
-
-    for (i = 0; i < d; i++)
-    {
-        padic_poly_get_coeff_padic(c, op, i, &ctx->pctx);
-        padic_poly_scalar_mul_padic(t, frobs + i, c, &ctx->pctx);
-
-        /* qadic_dense_add(rop, rop, t, ctx); */
-        _padic_poly_add_no_mod(rop->coeffs, &(rop->val), rop->coeffs, rop->val, rop->length,
-           t->coeffs, t->val, t->length, &ctx->pctx);
-        /* _padic_poly_add_2exp(rop->coeffs, &(rop->val), rop->coeffs, rop->val, rop->length,
-           t->coeffs, t->val, t->length, &ctx->pctx); */
-        _padic_poly_set_length(rop, FLINT_MAX(rop->length, t->length));
-    }
-    padic_poly_reduce(rop, &ctx->pctx);
+    _padic_poly_set_length(f, lenF);
+    _padic_poly_normalise(f);
 }
 
 void _qadic_dense_frobenius_teichmuller_char_2(qadic_dense_t rop, const qadic_dense_t op,
@@ -917,10 +1682,10 @@ void _qadic_dense_artin_schreier_root_ii(qadic_dense_t x, const qadic_dense_t al
                                    const qadic_dense_struct *roots,
                                    long m, const long *b, const qadic_dense_ctx_struct *qctx)
 {
-    if (x->val < 0)
-        abort();
     if (m == 1)
     {
+        /* This occurs in F_2[X] */
+#if 0
         qadic_dense_t alpha2, gamma2;
 
         qadic_dense_init(alpha2);
@@ -939,6 +1704,46 @@ void _qadic_dense_artin_schreier_root_ii(qadic_dense_t x, const qadic_dense_t al
 
         qadic_dense_clear(alpha2);
         qadic_dense_clear(gamma2);
+#else
+        unsigned long *mod = NULL, *invmod = NULL, *sqrt = NULL, *alpha2 = NULL, *gamma2 = NULL, *r, *s;
+        unsigned int wmod, winvmod, wsqrt, wa2, wc2, wr, ws;
+        long lmod, linvmod, lsqrt, la2, lc2, lr, ls;
+
+        padic_poly_get_gf2x(&mod, &wmod, &lmod, qctx->mod);
+        padic_poly_get_gf2x(&invmod, &winvmod, &linvmod, qctx->invmod);
+        padic_poly_get_gf2x(&sqrt, &wsqrt, &lsqrt, roots + 1);
+
+        padic_poly_get_gf2x(&alpha2, &wa2, &la2, alpha);
+        padic_poly_get_gf2x(&gamma2, &wc2, &lc2, gamma);
+
+        r = flint_malloc((2 * wmod) * sizeof(unsigned long));
+        s = flint_malloc((2 * wmod) * sizeof(unsigned long));
+
+        gf2x_invmod(r, alpha2, wa2, la2, mod, wmod, lmod);
+        lr = lmod - 1;
+        wr = L2W(lr);
+        gf2x_normalise(r, &wr, &lr);
+
+        gf2x_mul(r, r, wr, gamma2, wc2);
+        lr = lr + lc2 - 1;
+        wr = L2W(lr);
+        gf2x_reduce(s, r, wr, lr, mod, wmod, lmod, invmod, winvmod, linvmod);
+        ls = FLINT_MIN(lmod - 1, lr);
+        ws = L2W(ls);
+        gf2x_normalise(s, &ws, &ls);
+
+        _qadic_dense_sqrt_gf2x(s, &ws, &ls, s, ws, ls, sqrt, wsqrt, lsqrt,
+                               mod, wmod, lmod, invmod, winvmod, linvmod);
+        padic_poly_set_gf2x(x, s, ws, ls);
+
+        flint_free(r);
+        flint_free(s);
+        gf2x_clear(mod);
+        gf2x_clear(invmod);
+        gf2x_clear(sqrt);
+        gf2x_clear(alpha2);
+        gf2x_clear(gamma2);
+#endif
     }
     else
     {
@@ -967,6 +1772,8 @@ void _qadic_dense_artin_schreier_root_ii(qadic_dense_t x, const qadic_dense_t al
         i = n - 1;
         j = m - 1;
         {
+            /* This occurs in F_2[X] */
+#if 0
             qctxi = qctx + j;
 
             qadic_dense_set(alpha2, alpha);
@@ -979,6 +1786,51 @@ void _qadic_dense_artin_schreier_root_ii(qadic_dense_t x, const qadic_dense_t al
             qadic_dense_mul(x, x, gamma2, qctxi);
             qadic_dense_neg(x, x, qctxi);
             qadic_dense_proot(x, x, roots, qctxi);
+#else
+            unsigned long *mod = NULL, *invmod = NULL, *sqrt = NULL, *a2 = NULL, *c2 = NULL, *r, *s;
+            unsigned int wmod, winvmod, wsqrt, wa2, wc2, wr, ws;
+            long lmod, linvmod, lsqrt, la2, lc2, lr, ls;
+
+            qctxi = qctx + j;
+
+            padic_poly_get_gf2x(&mod, &wmod, &lmod, qctxi->mod);
+            padic_poly_get_gf2x(&invmod, &winvmod, &linvmod, qctxi->invmod);
+            padic_poly_get_gf2x(&sqrt, &wsqrt, &lsqrt, roots + 1);
+
+            padic_poly_get_gf2x(&a2, &wa2, &la2, alpha);
+            padic_poly_get_gf2x(&c2, &wc2, &lc2, gamma);
+
+            gf2x_normalise(a2, &wa2, &la2);
+            gf2x_normalise(c2, &wc2, &lc2);
+
+            r = flint_malloc((2 * wmod) * sizeof(unsigned long));
+            s = flint_malloc((2 * wmod) * sizeof(unsigned long));
+
+            gf2x_invmod(r, a2, wa2, la2, mod, wmod, lmod);
+            lr = lmod - 1;
+            wr = L2W(lr);
+            gf2x_normalise(r, &wr, &lr);
+
+            gf2x_mul(r, r, wr, c2, wc2);
+            lr = lr + lc2 - 1;
+            wr = L2W(lr);
+            gf2x_reduce(s, r, wr, lr, mod, wmod, lmod, invmod, winvmod, linvmod);
+            ls = FLINT_MIN(lmod - 1, lr);
+            ws = L2W(ls);
+            gf2x_normalise(s, &ws, &ls);
+
+            _qadic_dense_sqrt_gf2x(s, &ws, &ls, s, ws, ls, sqrt, wsqrt, lsqrt,
+                                   mod, wmod, lmod, invmod, winvmod, linvmod);
+            padic_poly_set_gf2x(x, s, ws, ls);
+
+            flint_free(r);
+            flint_free(s);
+            gf2x_clear(mod);
+            gf2x_clear(invmod);
+            gf2x_clear(sqrt);
+            gf2x_clear(a2);
+            gf2x_clear(c2);
+#endif
         }
         for (i--; i >= 0; i--)
         {
@@ -1003,10 +1855,11 @@ void _qadic_dense_artin_schreier_root_ii(qadic_dense_t x, const qadic_dense_t al
             padic_poly_reduce(beta2, &qctxi->pctx);
             padic_poly_reduce(gamma2, &qctxi->pctx);
 
-            qadic_dense_frobenius_teichmuller(gamma3, x, qctxi);
-            qadic_dense_mul(gamma3, gamma3, alpha2, qctxi);
-            qadic_dense_mul(Delta2, beta2, x, qctxi);
-            qadic_dense_add(gamma3, gamma3, Delta2, qctxi);
+            qadic_dense_frobenius_teichmuller(Delta2, x, qctxi);
+            padic_poly_mul(gamma3, Delta2, alpha2, &qctxi->pctx);
+            padic_poly_mul(Delta2, beta2, x, &qctxi->pctx);
+            padic_poly_add(gamma3, gamma3, Delta2, &qctxi->pctx);
+            qadic_dense_reduce(gamma3, qctxi);
             qadic_dense_add(gamma3, gamma3, gamma2, qctxi);
             if (!qadic_dense_is_zero(gamma3))
             {
@@ -1124,6 +1977,7 @@ void qadic_dense_artin_schreier_root_ii(qadic_dense_t x, const qadic_dense_t alp
 }
 
 /* Newton lift for the modified modular polynomial \Gamma_2 */
+/* \Gamma_2 = (X + 2 Y + 8 X Y)^2 + Y + 4 X Y */
 /* k = 0, M = N' */
 void _qadic_dense_gen_newton_lift_ii_gamma_2(qadic_dense_t rop, const qadic_dense_t op,
                                       const qadic_dense_struct *roots,
@@ -1136,7 +1990,6 @@ void _qadic_dense_gen_newton_lift_ii_gamma_2(qadic_dense_t rop, const qadic_dens
     else if (*(&qctx->pctx)->p == 2L)
     {
         const qadic_dense_ctx_struct *qctxi, *qctxk;
-        const fmpz_t two = {2L};
         long *a, i, j, k, n;
         qadic_dense_t Delta_x, Delta_y, Delta, V, y, xy;
 
@@ -1201,19 +2054,20 @@ void _qadic_dense_gen_newton_lift_ii_gamma_2(qadic_dense_t rop, const qadic_dens
 
             /* V */
             /* (x + 2 y + 8 x y)² */
-            qadic_dense_pow(V, Delta, two, qctxi);
+            qadic_dense_sqr(V, Delta, qctxi);
             /* (x + 2 y + 8 x y)² + y */
-            qadic_dense_add(V, V, y, qctxi);
+            padic_poly_add_no_mod(V, V, y, &qctxi->pctx);
             /* 4 x y */
             xy->val += 1;
-            padic_poly_reduce(xy, &qctxi->pctx);
             /* (x + 2 y + 8 x y)² + y + 4 x y */
-            qadic_dense_add(V, V, xy, qctxi);
+            padic_poly_add_no_mod(V, V, xy, &qctxi->pctx);
+            padic_poly_reduce(V, &qctxi->pctx);
             /* (x + 2 y + 8 x y)² + y + 4 x y / 2^N' */
             V->val -= a[i + 1];
 
             /* Delta_x */
-            /* x + 2 y + 8 x y */
+            /* 2 (x + 2 y + 8 x y) */
+            Delta->val += 1;
             padic_poly_reduce(Delta, &qctxk->pctx);
             /* 1 */
             qadic_dense_one(xy, qctxk);
@@ -1223,22 +2077,20 @@ void _qadic_dense_gen_newton_lift_ii_gamma_2(qadic_dense_t rop, const qadic_dens
             padic_poly_reduce(Delta_x, &qctxk->pctx);
             /* 1 + 8 y */
             qadic_dense_add(xy, xy, Delta_x, qctxk);
-            /* (x + 2 y + 8 x y) (1 + 8 y) */
-            qadic_dense_mul(Delta_x, Delta, xy, qctxk);
             /* 2 (x + 2 y + 8 x y) (1 + 8 y) */
-            Delta_x->val += 1;
-            padic_poly_reduce(Delta_x, &qctxk->pctx);
+            qadic_dense_mul(Delta_x, Delta, xy, qctxk);
             /* 4 y */
             y->val += 2;
             padic_poly_reduce(y, &qctxk->pctx);
             /* 2 (x + 2 y + 8 x y) (1 + 8 y) + 4 y*/
             qadic_dense_add(Delta_x, Delta_x, y, qctxk);
 
+#if 0
             /* Delta_y */
-            /* (x + 2 y + 8 x y) */
-            Delta->val += 2;
+            /* 4 (x + 2 y + 8 x y) */
+            Delta->val += 1;
             padic_poly_reduce(Delta, &qctxk->pctx);
-            /* 1 + 2 (x + 2 y + 8 x y) */
+            /* 1 + 4 (x + 2 y + 8 x y) */
             qadic_dense_one(xy, qctxk);
             qadic_dense_add(Delta_y, Delta, xy, qctxk);
             /* 4 x */
@@ -1247,13 +2099,32 @@ void _qadic_dense_gen_newton_lift_ii_gamma_2(qadic_dense_t rop, const qadic_dens
             padic_poly_reduce(y, &qctxk->pctx);
             /* 1 + 4 x */
             qadic_dense_add(xy, xy, y, qctxk);
-            /* (1 + 2 (x + 2 y + 8 x y)) (1 + 4 x) */
+            /* (1 + 4 (x + 2 y + 8 x y)) (1 + 4 x) */
             qadic_dense_mul(Delta_y, Delta_y, xy, qctxk);
-
+#else
+            /* Delta_y */
+            /* 4 (x + 2 y + 8 x y) */
+            Delta->val += 1;
+            padic_poly_reduce(Delta, &qctxk->pctx);
+            /* 4 x */
+            qadic_dense_set(y, rop);
+            y->val += 2;
+            padic_poly_reduce(y, &qctxk->pctx);
+            /* 16 x * (x + 2 y + 8 x y) */
+            qadic_dense_mul(Delta_y, Delta, y, qctxk);
+            /* 4 (x + 2 y + 8 x y) + 16 x * (x + 2 y + 8 x y) */
+            padic_poly_add_no_mod(Delta_y, Delta_y, Delta, &qctxk->pctx);
+            /* 4 x + 4 (x + 2 y + 8 x y) + 16 x * (x + 2 y + 8 x y) */
+            padic_poly_add_no_mod(Delta_y, Delta_y, y, &qctxk->pctx);
+            /* 1 + 4 x + 4 (x + 2 y + 8 x y) + 16 x * (x + 2 y + 8 x y) */
+            qadic_dense_one(xy, qctxk);
+            padic_poly_add_no_mod(Delta_y, Delta_y, xy, &qctxk->pctx);
+            padic_poly_reduce(Delta_y, &qctxk->pctx);
+#endif
             /* Delta */
             _qadic_dense_artin_schreier_root_ii(Delta, Delta_y, Delta_x, V, roots, m - k, b + k, qctx + k);
             Delta->val += a[i + 1];
-            padic_poly_reduce(Delta, &qctxi->pctx);
+            /*padic_poly_reduce(Delta, &qctxi->pctx);*/
 
             /* rop */
             qadic_dense_add(rop, rop, Delta, qctxi);
@@ -1278,7 +2149,7 @@ void _qadic_dense_gen_newton_lift_ii_gamma_2(qadic_dense_t rop, const qadic_dens
 
             /* V */
             /* (x + 2 y + 8 x y)² */
-            qadic_dense_pow(V, Delta, two, qctxi);
+            qadic_dense_sqr(V, Delta, qctxi);
             /* (x + 2 y + 8 x y)² + y */
             qadic_dense_add(V, V, y, qctxi);
             /* 4 x y */
@@ -1305,6 +2176,7 @@ void _qadic_dense_gen_newton_lift_ii_gamma_2(qadic_dense_t rop, const qadic_dens
 }
 
 /* Newton lift for the modified modular polynomial \Gamma_2 */
+/* \Gamma_2 = (X + 2 Y + 8 X Y)^2 + Y + 4 X Y */
 /* k = 0, M = N' */
 void qadic_dense_gen_newton_lift_ii_gamma_2(qadic_dense_t rop, const qadic_dense_t op,
                                       const qadic_dense_struct *roots,
@@ -1381,6 +2253,7 @@ void qadic_dense_gen_newton_lift_ii_gamma_2(qadic_dense_t rop, const qadic_dense
 }
 
 /* Newton lift for the modified modular polynomial \Lambda_2 */
+/* \Lambda_2 = Y^2 (1 + X)^2 - 4 X */
 /* k = 3 */
 void _qadic_dense_gen_newton_lift_ii_lambda_2(qadic_dense_t rop, const qadic_dense_t op,
                                       const qadic_dense_struct *roots,
@@ -1393,7 +2266,6 @@ void _qadic_dense_gen_newton_lift_ii_lambda_2(qadic_dense_t rop, const qadic_den
     else if (*(&ctx->pctx)->p == 2L)
     {
         qadic_dense_ctx_struct *qctxi, *qctxj, *qctxk;
-        const fmpz_t two = {2L};
 
         long *a, i, n;
         qadic_dense_t Delta_x, Delta_y, Delta, V, xy;
@@ -1493,7 +2365,7 @@ void _qadic_dense_gen_newton_lift_ii_lambda_2(qadic_dense_t rop, const qadic_den
             Delta->val += 2;
             padic_poly_reduce(Delta, &qctxi->pctx);
             /* y² (1 + x)² */
-            qadic_dense_pow(V, xy, two, qctxi);
+            qadic_dense_sqr(V, xy, qctxi);
             /* y² (1 + x)² - 4 x */
             qadic_dense_sub(V, V, Delta, qctxi);
             /* y² (1 + x)² - 4 x / 2^N'*/
@@ -1549,7 +2421,7 @@ void _qadic_dense_gen_newton_lift_ii_lambda_2(qadic_dense_t rop, const qadic_den
             Delta->val += 2;
             padic_poly_reduce(Delta, &qctxi->pctx);
             /* y² (1 + x)² */
-            qadic_dense_pow(V, xy, two, qctxi);
+            qadic_dense_sqr(V, xy, qctxi);
             /* y² (1 + x)² - 4 x */
             qadic_dense_sub(V, V, Delta, qctxi);
             padic_poly_reduce(V, &qctxi->pctx);
@@ -1581,6 +2453,7 @@ void _qadic_dense_gen_newton_lift_ii_lambda_2(qadic_dense_t rop, const qadic_den
 }
 
 /* Newton lift for the modified modular polynomial \Lambda_2 */
+/* \Lambda_2 = Y^2 (1 + X)^2 - 4 X */
 /* k = 3 */
 void qadic_dense_gen_newton_lift_ii_lambda_2(qadic_dense_t rop, const qadic_dense_t op,
                                       const qadic_dense_struct *roots,
@@ -1604,6 +2477,7 @@ void qadic_dense_gen_newton_lift_ii_lambda_2(qadic_dense_t rop, const qadic_dens
 }
 
 /* Newton lift for the modified modular polynomial \Lambda'_2 */
+/* \Lambda'_2 = 4 X Y^2 - (1 + X)^2 */
 /* k = 3 */
 void _qadic_dense_gen_newton_lift_ii_invlambda_2(qadic_dense_t rop, const qadic_dense_t op,
                                       const qadic_dense_struct *roots,
@@ -1616,7 +2490,6 @@ void _qadic_dense_gen_newton_lift_ii_invlambda_2(qadic_dense_t rop, const qadic_
     else if (*(&ctx->pctx)->p == 2L)
     {
         qadic_dense_ctx_struct *qctxi, *qctxj, *qctxk;
-        const fmpz_t two = {2L};
 
         long *a, i, n;
         qadic_dense_t Delta_x, Delta_y, Delta, V, y;
@@ -1717,7 +2590,7 @@ void _qadic_dense_gen_newton_lift_ii_invlambda_2(qadic_dense_t rop, const qadic_
             /* 4 x y² */
             qadic_dense_mul(V, Delta_y, y, qctxi);
             /* (1 + x)² */
-            qadic_dense_pow(Delta, Delta_x, two, qctxi);
+            qadic_dense_sqr(Delta, Delta_x, qctxi);
             /* 4 x y² - (1 + x)² */
             qadic_dense_sub(V, V, Delta, qctxi);
             /* 4 x y² - (1 + x)² / 2^N'*/
@@ -1730,7 +2603,7 @@ void _qadic_dense_gen_newton_lift_ii_invlambda_2(qadic_dense_t rop, const qadic_
             /* y */
             padic_poly_reduce(y, &qctxk->pctx);
             /* y² */
-            qadic_dense_pow(Delta, y, two, qctxk);
+            qadic_dense_sqr(Delta, y, qctxk);
             /* 4 y² */
             Delta->val += 2;
             padic_poly_reduce(Delta, &qctxk->pctx);
@@ -1771,7 +2644,7 @@ void _qadic_dense_gen_newton_lift_ii_invlambda_2(qadic_dense_t rop, const qadic_
             /* 4 x y² */
             qadic_dense_mul(V, Delta_y, y, qctxi);
             /* (1 + x)² */
-            qadic_dense_pow(Delta, Delta_x, two, qctxi);
+            qadic_dense_sqr(Delta, Delta_x, qctxi);
             /* 4 x y² - (1 + x)² */
             qadic_dense_sub(V, V, Delta, qctxi);
             padic_poly_reduce(V, &qctxi->pctx);
@@ -1804,6 +2677,7 @@ void _qadic_dense_gen_newton_lift_ii_invlambda_2(qadic_dense_t rop, const qadic_
 }
 
 /* Newton lift for the modified modular polynomial \Lambda'_2 */
+/* \Lambda'_2 = 4 X Y^2 - (1 + X)^2 */
 /* k = 3 */
 void qadic_dense_gen_newton_lift_ii_invlambda_2(qadic_dense_t rop, const qadic_dense_t op,
                                       const qadic_dense_struct *roots,
@@ -2052,19 +2926,23 @@ int harley_gamma_2(long d, long N)
     printf("\n");
 #endif
 
+    time = clock();
     padic_ctx_init(pctx_trace, p, N_trace, PADIC_TERSE);
     padic_ctx_init(pctx, p, N, PADIC_TERSE);
 
     padic_poly_init(h);
     padic_poly_set_fmpz_poly(h, g, pctx);
+    printf("p-adic context took %f seconds.\n", ((double) (clock() - time)) / CLOCKS_PER_SEC);
 #if DEBUG >= 1
     printf("h = ");
     padic_poly_print_pretty(h, "x", pctx);
     printf("\n");
 #endif
 
+    time = clock();
     qadic_dense_ctx_init(qctx, h, pctx, "t");
     qadic_dense_ctx_init_reduce(qctx_one, qctx, 1);
+    printf("q-adic context took %f seconds.\n", ((double) (clock() - time)) / CLOCKS_PER_SEC);
 #if DEBUG >= 1
     printf("invmod = ");
     padic_poly_print_pretty(qctx->invmod, "x", pctx);
@@ -2091,10 +2969,7 @@ int harley_gamma_2(long d, long N)
     time = clock();
     qadic_dense_frobenius_teichmuller_precomp_reduce_char_2(&frobs, qctx);
     printf("Frobenius reduction took %f seconds.\n", ((double) (clock() - time)) / CLOCKS_PER_SEC);
-    time = clock();
     */
-    qadic_dense_traces_init(&traces, qctx);
-    printf("Traces took %f seconds.\n", ((double) (clock() - time)) / CLOCKS_PER_SEC);
 
     padic_poly_init2(a, d - 1);
     _padic_poly_set_length(a, d - 1);
@@ -2113,6 +2988,7 @@ int harley_gamma_2(long d, long N)
     printf("\n");
 #endif
     printf("Lift took %f seconds.\n", ((double) (clock() - time)) / CLOCKS_PER_SEC);
+    abort();
 
     time = clock();
     qadic_dense_init(xinv);
@@ -2131,6 +3007,9 @@ int harley_gamma_2(long d, long N)
     printf("Inverse took %f seconds.\n", ((double) (clock() - time)) / CLOCKS_PER_SEC);
 
     /* Go back to sparse modulus from here... */
+    time = clock();
+    qadic_dense_traces_init(&traces, qctx);
+    printf("Traces took %f seconds.\n", ((double) (clock() - time)) / CLOCKS_PER_SEC);
     time = clock();
     padic_init(t, pctx);
     qadic_dense_norm_char_2(t, xinv, traces, qctx);
@@ -2263,22 +3142,26 @@ int harley_lambda_2(long d, long N)
     printf("\n");
 #endif
 
+    time = clock();
     padic_ctx_init(pctx_trace, p, N_trace, PADIC_TERSE);
     padic_ctx_init(pctx, p, N, PADIC_TERSE);
 
     padic_poly_init(h);
     padic_poly_set_fmpz_poly(h, g, pctx);
+    printf("p-adic context took %f seconds.\n", ((double) (clock() - time)) / CLOCKS_PER_SEC);
 #if DEBUG >= 1
     printf("h = ");
     padic_poly_print_pretty(h, "x", pctx);
     printf("\n");
 #endif
 
+    time = clock();
     qadic_dense_ctx_init(qctx, h, pctx, "t");
     qadic_dense_ctx_init_reduce(qctx_one, qctx, 1);
     qadic_dense_ctx_init_reduce(qctxk, qctx, 2 * 3 + 1);
     qadic_dense_init(one);
     qadic_dense_one(one, qctxk);
+    printf("q-adic context took %f seconds.\n", ((double) (clock() - time)) / CLOCKS_PER_SEC);
 #if DEBUG >= 1
     printf("invmod = ");
     padic_poly_print_pretty(qctx->invmod, "x", pctx);
@@ -2305,10 +3188,7 @@ int harley_lambda_2(long d, long N)
     time = clock();
     qadic_dense_frobenius_teichmuller_precomp_reduce_char_2(&frobs, qctx);
     printf("Frobenius reduction took %f seconds.\n", ((double) (clock() - time)) / CLOCKS_PER_SEC);
-    time = clock();
     */
-    qadic_dense_traces_init(&traces, qctx);
-    printf("Traces took %f seconds.\n", ((double) (clock() - time)) / CLOCKS_PER_SEC);
 
     padic_poly_init2(a, d - 1);
     _padic_poly_set_length(a, d - 1);
@@ -2359,6 +3239,9 @@ int harley_lambda_2(long d, long N)
     printf("Inverse took %f seconds.\n", ((double) (clock() - time)) / CLOCKS_PER_SEC);
 
     /* Go back to sparse modulus from here... */
+    time = clock();
+    qadic_dense_traces_init(&traces, qctx);
+    printf("Traces took %f seconds.\n", ((double) (clock() - time)) / CLOCKS_PER_SEC);
     time = clock();
     padic_init(t, pctx);
     qadic_dense_norm_char_2(t, xinv, traces, qctx);
@@ -2504,10 +3387,7 @@ int harley_invlambda_2(long d, long N)
     time = clock();
     qadic_dense_frobenius_teichmuller_precomp_reduce_char_2(&frobs, qctx);
     printf("Frobenius reduction took %f seconds.\n", ((double) (clock() - time)) / CLOCKS_PER_SEC);
-    time = clock();
     */
-    qadic_dense_traces_init(&traces, qctx);
-    printf("Traces took %f seconds.\n", ((double) (clock() - time)) / CLOCKS_PER_SEC);
 
     padic_poly_init2(a, d - 1);
     _padic_poly_set_length(a, d - 1);
@@ -2558,6 +3438,9 @@ int harley_invlambda_2(long d, long N)
     printf("Inverse took %f seconds.\n", ((double) (clock() - time)) / CLOCKS_PER_SEC);
 
     /* Go back to sparse modulus from here... */
+    time = clock();
+    qadic_dense_traces_init(&traces, qctx);
+    printf("Traces took %f seconds.\n", ((double) (clock() - time)) / CLOCKS_PER_SEC);
     time = clock();
     padic_init(t, pctx);
     qadic_dense_norm_char_2(t, xinv, traces, qctx);

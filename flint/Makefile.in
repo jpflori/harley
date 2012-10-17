@@ -1,0 +1,19 @@
+LIBS=-L$(CURDIR) -L$(PREFIX)/lib -lflint -lmpfr -lmpir -lgf2x -lm
+INCS=-I$(CURDIR) -I$(PREFIX)/include -I$(PREFIX)/include/flint
+
+LD_LIBRARY_PATH:=${CURDIR}:${PREFIX}/lib:${LD_LIBRARY_PATH}
+
+export
+
+all: $(POINTS) $(POINTS_DENSE)
+
+clean:
+	rm -rf $(POINTS) $(POINTS_DENSE) *.o
+
+distclean: clean
+	rm -f Makefile
+
+%: %.c
+	$(CC) -fPIC $(CFLAGS) $(INCS) $< -o $@ $(LIBS)
+
+.PHONY: clean all
